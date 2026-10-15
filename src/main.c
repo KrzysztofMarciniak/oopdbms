@@ -1,10 +1,16 @@
 #include "interface/help/main.h"
 
+#include "interface/tokenizer/main.h"
+
 int main(int argc, char** argv) {
         if (argc < 2) {
                 i_print_help();
         }
+
         // 1. tokenizer
+        // will return structure to pass to analyzer
+        i_tokenize(argc, argv);
+
         // 2. (syntax) analyzer
         // 2.1 wrong->print error
         // 2.2 correct->next
