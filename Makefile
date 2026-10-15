@@ -23,7 +23,10 @@ all: build
 
 build:
 	mkdir -p $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(SOURCES) -o $(BUILD_DIR)/$(TARGET)
+	$(CC) $(CFLAGS) -Isrc $(SOURCES) -o $(BUILD_DIR)/$(TARGET)
 clean:
 	rm -rf $(BUILD_DIR)
+run: build
+	$(BUILD_DIR)/$(TARGET)
+	
 # end
