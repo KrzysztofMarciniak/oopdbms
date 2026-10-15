@@ -14,19 +14,26 @@ CFLAGS := \
 TARGET := oopdbms
 BUILD_DIR := build
 SOURCES := $(shell find src -type f -name '*.c')
+HEADERS := $(shell find src -type f -name '*.h')
 OBJECTS := $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(SOURCES))
 DEPFILES := $(OBJECTS:.o=.d)
 
-.PHONY: build clean
+.PHONY: build clean format run
 
 all: build
 
-build:
+format:
+	clang-format -i $(SOURCES) $(HEADERS)
+
+build: format
 	mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) -Isrc $(SOURCES) -o $(BUILD_DIR)/$(TARGET)
-clean:
-	rm -rf $(BUILD_DIR)
+
 run: build
 	$(BUILD_DIR)/$(TARGET)
+
+clean:
+	rm -rf $(BUILD_DIR)
+
 	
 # end
