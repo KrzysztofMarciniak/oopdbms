@@ -20,7 +20,7 @@ HEADERS := $(shell find src -type f -name '*.h')
 OBJECTS := $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(SOURCES))
 DEPFILES := $(OBJECTS:.o=.d)
 
-.PHONY: build clean format run test
+.PHONY: build clean format run test release
 
 all: build
 
@@ -41,6 +41,11 @@ test: format
 
 clean:
 	rm -rf $(BUILD_DIR)
+
+release: CFLAGS += -O2 -DNDEBUG
+release: clean format
+	mkdir -p $(BUILD_DIR)
+	$(CC) $(CFLAGS) -Isrc $(SOURCES) -o $(BUILD_DIR)/$(TARGET)
 
 	
 # end
