@@ -1,0 +1,78 @@
+oopdbms - Object-Oriented Database Management System
+
+USAGE
+  oopdbms '<statement>'
+  oopdbms <statement split into arguments>
+  oopdbms
+
+CLASSES
+  CREATE CLASS <name> [EXTENDS <class>] [IMPLEMENTS <interface>[, ...]] (<field> <type>[, ...])
+  DROP CLASS <name>
+  ALTER CLASS <name> ADD FIELD <field> <type>
+  ALTER CLASS <name> DROP FIELD <field>
+  ALTER CLASS <name> RENAME FIELD <old> <new>
+  ALTER CLASS <name> RENAME <new>
+  ALTER CLASS <name> EXTENDS <class>
+  ALTER CLASS <name> IMPLEMENTS <interface>
+
+INTERFACES
+  CREATE INTERFACE <name> (<field> <type>[, ...])
+  DROP INTERFACE <name>
+
+FUNCTIONS
+  CREATE FUNCTION <class>.<name> (<arg> <type>[, ...]) RETURNS <type> AS <expression>
+  DROP FUNCTION <class>.<name>
+  CALL <class>.<name> (<value>[, ...]) ON <id>
+
+OBJECTS
+  NEW <class> (<field> = <value>[, ...])
+  FIND <class> [WHERE <condition>]
+  SET <class> <id> (<field> = <value>[, ...])
+  DELETE <class> <id>
+
+INFORMATION
+  LIST CLASSES
+  LIST INTERFACES
+  DESCRIBE <class>
+
+TYPES
+  integer          Whole numbers
+  float            Decimal numbers
+  text             Text values
+  bool             true or false
+  pointer <class>  Reference to an object of a class
+
+EXPRESSIONS
+  Operators: +  -  *  /
+  Comparisons: =  !=  <  <=  >  >=
+  Use parentheses to group expressions.
+  Text values can use single or double quotes.
+
+EXAMPLES
+  CREATE INTERFACE Named (name text)
+  CREATE CLASS Person IMPLEMENTS Named (name text, age integer)
+  CREATE CLASS Employee EXTENDS Person (salary float)
+  NEW Person (name = "Ada Lovelace", age = 36)
+  FIND Person WHERE age >= 18
+  SET Person 1 (age = 37)
+  DELETE Person 1
+  LIST CLASSES
+  DESCRIBE Person
+
+DATABASE
+  Default file: database.oopdb
+  Set OOPDB to use a different database file:
+    OOPDB=/path/to/database.oopdb oopdbms 'FIND Person'
+
+NOTES
+  Commands and keywords are case-sensitive.
+  Quote the entire statement when passing it as one argument.
+  The database file is checked before a statement is processed.
+  Statement execution is not implemented yet.
+
+BUILD AND TEST
+  make        Build the project
+  make test   Run tests
+  make clean  Remove build artifacts
+
+For detailed documentation, see README.md.
