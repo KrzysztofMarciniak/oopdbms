@@ -127,7 +127,7 @@ int main(void) {
         _test_routing();
         _test_mismatch();
         _test_bad_input();
-
+        printf("executor tests:\n");
         printf("%d checks, %d failures\n", checks, failures);
         return failures != 0;
 }
