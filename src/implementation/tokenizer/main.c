@@ -91,6 +91,62 @@ static const struct keyword KEYWORDS[] = {
     {"false", TOKENIZER_LITERAL_FALSE},
 };
 
+/** Names of the tokens, indexed by token type. */
+static const char* const TOKEN_NAMES[TOKENIZER_COUNT] = {
+    [TOKENIZER_ILLEGAL]          = "invalid input",
+    [TOKENIZER_END]              = "end of input",
+    [TOKENIZER_IDENTIFIER]       = "a name",
+    [TOKENIZER_CREATE_CLASS]     = "'CREATE CLASS'",
+    [TOKENIZER_DROP_CLASS]       = "'DROP CLASS'",
+    [TOKENIZER_ALTER_CLASS]      = "'ALTER CLASS'",
+    [TOKENIZER_CREATE_INTERFACE] = "'CREATE INTERFACE'",
+    [TOKENIZER_DROP_INTERFACE]   = "'DROP INTERFACE'",
+    [TOKENIZER_CREATE_FUNCTION]  = "'CREATE FUNCTION'",
+    [TOKENIZER_DROP_FUNCTION]    = "'DROP FUNCTION'",
+    [TOKENIZER_CALL]             = "'CALL'",
+    [TOKENIZER_NEW]              = "'NEW'",
+    [TOKENIZER_FIND]             = "'FIND'",
+    [TOKENIZER_SET]              = "'SET'",
+    [TOKENIZER_DELETE]           = "'DELETE'",
+    [TOKENIZER_LIST_CLASSES]     = "'LIST CLASSES'",
+    [TOKENIZER_LIST_INTERFACES]  = "'LIST INTERFACES'",
+    [TOKENIZER_DESCRIBE]         = "'DESCRIBE'",
+    [TOKENIZER_ADD_FIELD]        = "'ADD FIELD'",
+    [TOKENIZER_DROP_FIELD]       = "'DROP FIELD'",
+    [TOKENIZER_RENAME_FIELD]     = "'RENAME FIELD'",
+    [TOKENIZER_RENAME]           = "'RENAME'",
+    [TOKENIZER_EXTENDS]          = "'EXTENDS'",
+    [TOKENIZER_IMPLEMENTS]       = "'IMPLEMENTS'",
+    [TOKENIZER_RETURNS]          = "'RETURNS'",
+    [TOKENIZER_AS]               = "'AS'",
+    [TOKENIZER_ON]               = "'ON'",
+    [TOKENIZER_WHERE]            = "'WHERE'",
+    [TOKENIZER_TYPE_INTEGER]     = "'integer'",
+    [TOKENIZER_TYPE_FLOAT]       = "'float'",
+    [TOKENIZER_TYPE_TEXT]        = "'text'",
+    [TOKENIZER_TYPE_BOOL]        = "'bool'",
+    [TOKENIZER_TYPE_POINTER]     = "'pointer'",
+    [TOKENIZER_LITERAL_INTEGER]  = "an integer",
+    [TOKENIZER_LITERAL_FLOAT]    = "a float",
+    [TOKENIZER_LITERAL_TEXT]     = "a text",
+    [TOKENIZER_LITERAL_TRUE]     = "'true'",
+    [TOKENIZER_LITERAL_FALSE]    = "'false'",
+    [TOKENIZER_EQUAL]            = "'='",
+    [TOKENIZER_NOT_EQUAL]        = "'!='",
+    [TOKENIZER_LESS]             = "'<'",
+    [TOKENIZER_LESS_EQUAL]       = "'<='",
+    [TOKENIZER_GREATER]          = "'>'",
+    [TOKENIZER_GREATER_EQUAL]    = "'>='",
+    [TOKENIZER_PLUS]             = "'+'",
+    [TOKENIZER_MINUS]            = "'-'",
+    [TOKENIZER_STAR]             = "'*'",
+    [TOKENIZER_SLASH]            = "'/'",
+    [TOKENIZER_LPAREN]           = "'('",
+    [TOKENIZER_RPAREN]           = "')'",
+    [TOKENIZER_COMMA]            = "','",
+    [TOKENIZER_DOT]              = "'.'",
+};
+
 /** Words that only mean something together with a second word. */
 static const char* const PHRASE_HEADS[] = {"CREATE", "DROP", "ALTER", "LIST",
                                            "ADD"};
@@ -486,6 +542,13 @@ struct tokenizer_tokens i_tokenize(int argc, char** argv,
                 i_tokenizer_free(&tokens);
         }
         return tokens;
+}
+
+const char* i_tokenizer_token_name(enum TOKENIZER_TOKEN type) {
+        if ((unsigned)type >= TOKENIZER_COUNT || TOKEN_NAMES[type] == NULL) {
+                return "unknown token";
+        }
+        return TOKEN_NAMES[type];
 }
 
 void i_tokenizer_free(struct tokenizer_tokens* tokens) {

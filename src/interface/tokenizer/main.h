@@ -37,4 +37,12 @@ struct tokenizer_tokens i_tokenize(int argc, char** argv,
  */
 void i_tokenizer_free(struct tokenizer_tokens* tokens);
 
+/**
+ * @brief Human readable name of a token type, for error messages.
+ *
+ * @param type Token type.
+ * @return Static string, never NULL.
+ */
+const char* i_tokenizer_token_name(enum TOKENIZER_TOKEN type);
+
 #endif// INTERFACE_TOKENIZER_MAIN_H

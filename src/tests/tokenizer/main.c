@@ -283,6 +283,19 @@ static void _test_errors(void) {
                       TOKENIZER_ERROR_BAD_NUMBER, 24);
 }
 
+static void _test_names(void) {
+        int i;
+
+        for (i = 0; i < TOKENIZER_COUNT; i++) {
+                CHECK(strcmp(i_tokenizer_token_name((enum TOKENIZER_TOKEN)i),
+                             "unknown token") != 0,
+                      "every token has a name");
+        }
+        CHECK(strcmp(i_tokenizer_token_name(TOKENIZER_COUNT),
+                     "unknown token") == 0,
+              "out of range has no name");
+}
+
 int main(void) {
         _test_classes();
         _test_alter();
@@ -295,6 +308,7 @@ int main(void) {
         _test_lexemes();
         _test_text();
         _test_errors();
+        _test_names();
 
         printf("%d checks, %d failures\n", checks, failures);
         return failures != 0;
