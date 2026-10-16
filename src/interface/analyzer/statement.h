@@ -61,6 +61,22 @@ enum ANALYZER_STATEMENT {
 };
 
 /**
+ * @brief Family of a statement, what the executor routes on first.
+ */
+enum ANALYZER_GROUP {
+        /** Zero value, no statement. */
+        ANALYZER_GROUP_NONE = 0,
+        /** CREATE/DROP CLASS, CREATE/DROP INTERFACE, ALTER CLASS ... */
+        ANALYZER_GROUP_SCHEMA,
+        /** CREATE/DROP FUNCTION, CALL */
+        ANALYZER_GROUP_FUNCTION,
+        /** NEW, FIND, SET, DELETE */
+        ANALYZER_GROUP_OBJECT,
+        /** LIST CLASSES, LIST INTERFACES, DESCRIBE */
+        ANALYZER_GROUP_METADATA
+};
+
+/**
  * @brief Kind of a declared type.
  */
 enum ANALYZER_TYPE {
@@ -250,6 +266,8 @@ struct analyzer_expression {
 struct analyzer_statement {
         /** Which statement, selects the fields below that are used. */
         enum ANALYZER_STATEMENT kind;
+        /** Family of kind, set together with it. */
+        enum ANALYZER_GROUP group;
         /** Class or interface the statement is about. */
         char* name;
         /** Function name (CREATE/DROP FUNCTION, CALL). */

@@ -806,6 +806,38 @@ static bool _parse_statement(struct parser* p, struct analyzer_statement* st) {
         }
 }
 
+/** Family of a statement kind. */
+static enum ANALYZER_GROUP _group_of(enum ANALYZER_STATEMENT kind) {
+        switch (kind) {
+                case ANALYZER_CREATE_CLASS:
+                case ANALYZER_DROP_CLASS:
+                case ANALYZER_ALTER_CLASS_ADD_FIELD:
+                case ANALYZER_ALTER_CLASS_DROP_FIELD:
+                case ANALYZER_ALTER_CLASS_RENAME_FIELD:
+                case ANALYZER_ALTER_CLASS_RENAME:
+                case ANALYZER_ALTER_CLASS_EXTENDS:
+                case ANALYZER_ALTER_CLASS_IMPLEMENTS:
+                case ANALYZER_CREATE_INTERFACE:
+                case ANALYZER_DROP_INTERFACE:
+                        return ANALYZER_GROUP_SCHEMA;
+                case ANALYZER_CREATE_FUNCTION:
+                case ANALYZER_DROP_FUNCTION:
+                case ANALYZER_CALL:
+                        return ANALYZER_GROUP_FUNCTION;
+                case ANALYZER_NEW:
+                case ANALYZER_FIND:
+                case ANALYZER_SET:
+                case ANALYZER_DELETE:
+                        return ANALYZER_GROUP_OBJECT;
+                case ANALYZER_LIST_CLASSES:
+                case ANALYZER_LIST_INTERFACES:
+                case ANALYZER_DESCRIBE:
+                        return ANALYZER_GROUP_METADATA;
+                default:
+                        return ANALYZER_GROUP_NONE;
+        }
+}
+
 struct analyzer_statement i_analyze(const struct tokenizer_tokens* tokens,
                                     struct analyzer_error* error) {
         struct analyzer_statement statement = {ANALYZER_INVALID};
@@ -832,6 +864,8 @@ struct analyzer_statement i_analyze(const struct tokenizer_tokens* tokens,
              _expect(&parser, TOKENIZER_END);
         if (!ok) {
                 i_analyzer_free(&statement);
+        } else {
+                statement.group = _group_of(statement.kind);
         }
         return statement;
 }
