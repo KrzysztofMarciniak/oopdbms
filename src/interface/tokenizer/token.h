@@ -8,8 +8,8 @@
  * Every statement form, keyword, type, literal, operator and punctuation
  * mark is its own enumerator. Multi-word phrases that are contiguous in the
  * syntax (CREATE CLASS, LIST CLASSES, ...) are a single token. The tokenizer
- * only classifies; it never converts values. Numbers are read from the
- * lexeme by whoever needs them.
+ * only classifies; it never converts values. Names and literals carry the
+ * text they were written as, so the next stage knows what each token was.
  */
 
 #include <stddef.h>
@@ -150,12 +150,24 @@ struct tokenizer_token {
         /** What the token is. */
         enum TOKENIZER_TOKEN type;
         /**
-         * Start of the token text, points into argv (not owned). For
-         * multi-word tokens (CREATE_CLASS, ...) this is the first word only.
+         * Raw source of the token, points into argv (not owned), meant for
+         * error messages. For multi-word tokens (CREATE_CLASS, ...) this is
+         * the first word only. Use text for the value.
          */
         const char* lexeme;
         /** Length of lexeme in bytes. */
         size_t length;
+        /**
+         * Owned, NUL-terminated text of the token, NULL when the type says
+         * everything. Set for:
+         *  - TOKENIZER_IDENTIFIER: the name, e.g. "Person"
+         *  - TOKENIZER_LITERAL_TEXT: the content without quotes, backslash
+         *    escapes resolved, e.g. Frank "F" Herbert
+         *  - TOKENIZER_LITERAL_INTEGER, TOKENIZER_LITERAL_FLOAT: the digits,
+         *    e.g. "65" or "9.99"
+         * Released by i_tokenizer_free().
+         */
+        char* text;
         /** Where the token starts. */
         struct tokenizer_position position;
 };

@@ -110,10 +110,9 @@ static bool _is_word_start(char c) {
 
 static bool _is_word_char(char c) { return _is_word_start(c) || _is_digit(c); }
 
-static bool _fail(struct tokenizer_error* error,
-                  enum tokenizer_error_type type,
+static bool _fail(struct tokenizer_error* error, enum tokenizer_error_type type,
                   struct tokenizer_position position) {
-        error->type = type;
+        error->type     = type;
         error->position = position;
         return false;
 }
@@ -146,7 +145,7 @@ static bool _piece_add(struct pieces* pieces, struct piece piece) {
         if (grown == NULL) {
                 return false;
         }
-        pieces->items = grown;
+        pieces->items                  = grown;
         pieces->items[pieces->count++] = piece;
         return true;
 }
@@ -159,15 +158,55 @@ static bool _token_add(struct tokenizer_tokens* tokens,
         if (grown == NULL) {
                 return false;
         }
-        tokens->items = grown;
+        tokens->items                  = grown;
         tokens->items[tokens->count++] = token;
         return true;
+}
+
+/** True for the tokens that carry their text to the next stage. */
+static bool _has_text(enum TOKENIZER_TOKEN type) {
+        return type == TOKENIZER_IDENTIFIER ||
+               type == TOKENIZER_LITERAL_INTEGER ||
+               type == TOKENIZER_LITERAL_FLOAT ||
+               type == TOKENIZER_LITERAL_TEXT;
+}
+
+/**
+ * Copy what a piece stands for: the name, the digits, or for a text the
+ * content without quotes and with backslash escapes resolved. Returns NULL
+ * when out of memory.
+ */
+static char* _copy_text(const struct piece* piece) {
+        const char* source = piece->start;
+        size_t length      = piece->length;
+        size_t written     = 0;
+        size_t i;
+        char* copy;
+
+        if (piece->kind == PIECE_TEXT) {
+                source++;
+                length -= 2;
+        }
+        copy = malloc(length + 1);
+        if (copy == NULL) {
+                return NULL;
+        }
+        for (i = 0; i < length; i++) {
+                if (piece->kind == PIECE_TEXT && source[i] == '\\' &&
+                    i + 1 < length) {
+                        i++;
+                }
+                copy[written++] = source[i];
+        }
+        copy[written] = '\0';
+        return copy;
 }
 
 static bool _piece_is(const struct piece* piece, const char* text) {
         size_t length = strlen(text);
 
-        return piece->length == length && memcmp(piece->start, text, length) == 0;
+        return piece->length == length &&
+               memcmp(piece->start, text, length) == 0;
 }
 
 /** True if the last piece is a '.' that ends exactly at offset. */
@@ -191,7 +230,7 @@ static bool _follows_dot(const struct pieces* pieces, size_t argv_index,
  */
 static size_t _scan_text(const char* text) {
         char quote = text[0];
-        size_t i = 1;
+        size_t i   = 1;
 
         while (text[i] != '\0' && text[i] != quote) {
                 if (text[i] == '\\' && text[i + 1] != '\0') {
@@ -227,7 +266,7 @@ static size_t _scan_symbol(const char* text) {
 
 /** Stage 1: cut one argv entry into pieces. */
 static bool _split_entry(const char* text, size_t argv_index,
-                        struct pieces* pieces, struct tokenizer_error* error) {
+                         struct pieces* pieces, struct tokenizer_error* error) {
         size_t i = 0;
 
         while (text[i] != '\0') {
@@ -240,7 +279,7 @@ static bool _split_entry(const char* text, size_t argv_index,
                         continue;
                 }
                 piece.position.argv_index = argv_index;
-                piece.position.offset = start;
+                piece.position.offset     = start;
 
                 if (_is_word_start(text[i])) {
                         piece.kind = PIECE_WORD;
@@ -283,7 +322,7 @@ static bool _split_entry(const char* text, size_t argv_index,
                         piece.kind = PIECE_SYMBOL;
                         i += length;
                 }
-                piece.start = text + start;
+                piece.start  = text + start;
                 piece.length = i - start;
                 if (!_piece_add(pieces, piece)) {
                         return _fail(error, TOKENIZER_ERROR_OUT_OF_MEMORY,
@@ -369,11 +408,12 @@ static bool _classify(const struct pieces* pieces, size_t end_index,
                 const struct piece* next =
                     i + 1 < pieces->count ? &pieces->items[i + 1] : NULL;
 
-                consumed = 1;
+                consumed   = 1;
+                token.text = NULL;
                 switch (piece->kind) {
                         case PIECE_WORD:
-                                token.type = _classify_word(piece, next,
-                                                            &consumed);
+                                token.type =
+                                    _classify_word(piece, next, &consumed);
                                 break;
                         case PIECE_INTEGER:
                                 token.type = TOKENIZER_LITERAL_INTEGER;
@@ -392,20 +432,30 @@ static bool _classify(const struct pieces* pieces, size_t end_index,
                         return _fail(error, TOKENIZER_ERROR_INCOMPLETE_PHRASE,
                                      piece->position);
                 }
-                token.lexeme = piece->start;
-                token.length = piece->length;
+                token.lexeme   = piece->start;
+                token.length   = piece->length;
                 token.position = piece->position;
+                if (_has_text(token.type)) {
+                        token.text = _copy_text(piece);
+                        if (token.text == NULL) {
+                                return _fail(error,
+                                             TOKENIZER_ERROR_OUT_OF_MEMORY,
+                                             piece->position);
+                        }
+                }
                 if (!_token_add(tokens, token)) {
+                        free(token.text);
                         return _fail(error, TOKENIZER_ERROR_OUT_OF_MEMORY,
                                      piece->position);
                 }
                 i += consumed;
         }
-        token.type = TOKENIZER_END;
-        token.lexeme = "";
-        token.length = 0;
+        token.type                = TOKENIZER_END;
+        token.lexeme              = "";
+        token.length              = 0;
+        token.text                = NULL;
         token.position.argv_index = end_index;
-        token.position.offset = 0;
+        token.position.offset     = 0;
         if (!_token_add(tokens, token)) {
                 return _fail(error, TOKENIZER_ERROR_OUT_OF_MEMORY,
                              token.position);
@@ -416,19 +466,19 @@ static bool _classify(const struct pieces* pieces, size_t end_index,
 struct tokenizer_tokens i_tokenize(int argc, char** argv,
                                    struct tokenizer_error* error) {
         struct tokenizer_tokens tokens = {NULL, 0, 0};
-        struct pieces pieces = {NULL, 0, 0};
-        bool ok = true;
+        struct pieces pieces           = {NULL, 0, 0};
+        bool ok                        = true;
         int i;
 
-        error->type = TOKENIZER_OK;
+        error->type                = TOKENIZER_OK;
         error->position.argv_index = 0;
-        error->position.offset = 0;
+        error->position.offset     = 0;
 
         for (i = 1; ok && i < argc; i++) {
-                ok = _split_entry(argv[i], (size_t) i, &pieces, error);
+                ok = _split_entry(argv[i], (size_t)i, &pieces, error);
         }
         if (ok) {
-                ok = _classify(&pieces, argc > 0 ? (size_t) argc : 0, &tokens,
+                ok = _classify(&pieces, argc > 0 ? (size_t)argc : 0, &tokens,
                                error);
         }
         free(pieces.items);
@@ -439,8 +489,13 @@ struct tokenizer_tokens i_tokenize(int argc, char** argv,
 }
 
 void i_tokenizer_free(struct tokenizer_tokens* tokens) {
+        size_t i;
+
+        for (i = 0; i < tokens->count; i++) {
+                free(tokens->items[i].text);
+        }
         free(tokens->items);
-        tokens->items = NULL;
-        tokens->count = 0;
+        tokens->items    = NULL;
+        tokens->count    = 0;
         tokens->capacity = 0;
 }

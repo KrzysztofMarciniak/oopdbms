@@ -31,7 +31,7 @@ struct tokenizer_tokens i_tokenize(int argc, char** argv,
                                    struct tokenizer_error* error);
 
 /**
- * @brief Release the memory held by a token array.
+ * @brief Release the memory held by a token array and its token texts.
  *
  * @param tokens Array to release, left empty afterwards.
  */
