@@ -19,8 +19,10 @@ LIB_SOURCES := $(filter-out src/main.c,$(SOURCES))
 HEADERS := $(shell find src -type f -name '*.h')
 OBJECTS := $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(SOURCES))
 DEPFILES := $(OBJECTS:.o=.d)
+DOXYGEN ?= doxygen
+DOCS_DIR := $(BUILD_DIR)/docs
 
-.PHONY: build clean format run test
+.PHONY: build clean docs format run test
 
 all: build
 
@@ -41,6 +43,23 @@ test: format
 		$(CC) $(CFLAGS) -Isrc $(LIB_SOURCES) $$t -o $(BUILD_DIR)/$$name || exit 1; \
 		$(BUILD_DIR)/$$name || exit 1; \
 	done
+
+docs:
+	mkdir -p $(DOCS_DIR)
+	@printf '%s\n' \
+		'PROJECT_NAME = oopdbms' \
+		'INPUT = src' \
+		'RECURSIVE = YES' \
+		'FILE_PATTERNS = *.c *.h' \
+		'STRIP_FROM_PATH = src' \
+		'OUTPUT_DIRECTORY = $(DOCS_DIR)' \
+		'OPTIMIZE_OUTPUT_FOR_C = YES' \
+		'EXTRACT_ALL = YES' \
+		'EXTRACT_STATIC = YES' \
+		'GENERATE_LATEX = NO' \
+		'QUIET = YES' \
+		| $(DOXYGEN) -
+	@echo "docs: $(DOCS_DIR)/html/index.html"
 
 clean:
 	rm -rf $(BUILD_DIR)
