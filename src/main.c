@@ -1,7 +1,9 @@
 #include "error/analyzer/main.h"
 
+#include "error/file-check/main.h"
 #include "error/tokenizer/main.h"
 #include "interface/analyzer/main.h"
+#include "interface/file-check/main.h"
 #include "interface/help/main.h"
 #include "interface/tokenizer/main.h"
 
@@ -10,6 +12,8 @@ int main(int argc, char** argv) {
         struct tokenizer_tokens tokens;
         struct analyzer_error analyzer_error;
         struct analyzer_statement statement;
+        struct file_check_error file_error;
+        enum FILE_CHECK_STATE file_state;
 
         if (argc < 2) {
                 i_print_help();
@@ -34,7 +38,15 @@ int main(int argc, char** argv) {
         }
 
         // 3.	 file_check
-        // 4.  execute
+        file_state = i_file_check(i_file_check_path(), &statement, &file_error);
+        if (file_error.type != FILE_CHECK_OK) {
+                file_check_error_print(file_error);
+                i_analyzer_free(&statement);
+                return 1;
+        }
+
+        // 4.  execute (file_state tells whether the file was just created)
+        (void)file_state;
 
         i_analyzer_free(&statement);
         return 0;

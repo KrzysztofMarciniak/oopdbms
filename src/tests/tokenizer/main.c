@@ -309,7 +309,7 @@ int main(void) {
         _test_text();
         _test_errors();
         _test_names();
-
+        printf("tokenizer tests:\n");
         printf("%d checks, %d failures\n", checks, failures);
         return failures != 0;
 }

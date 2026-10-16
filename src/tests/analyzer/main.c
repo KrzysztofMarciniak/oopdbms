@@ -406,7 +406,7 @@ int main(void) {
         _test_precedence();
         _test_errors();
         _test_limits();
-
+        printf("analyzer tests:\n");
         printf("%d checks, %d failures\n", checks, failures);
         return failures != 0;
 }

@@ -14,6 +14,9 @@ CFLAGS := \
 TARGET := oopdbms
 BUILD_DIR := build
 SOURCES := $(shell find src -type f -name '*.c' -not -path 'src/tests/*')
+SOURCES := $(shell find src -type f -name '*.c' \
+	-not -path 'src/tests/*')
+
 TEST_SOURCES := $(shell find src/tests -type f -name '*.c')
 LIB_SOURCES := $(filter-out src/main.c,$(SOURCES))
 HEADERS := $(shell find src -type f -name '*.h')
