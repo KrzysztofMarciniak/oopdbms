@@ -41,7 +41,7 @@ static void _write_file(const unsigned char* bytes, size_t count) {
 
 /** Write a header with the given version. */
 static void _write_header(const char* magic, unsigned long version) {
-        unsigned char bytes[STORAGE_HEADER_SIZE];
+        unsigned char bytes[STORAGE_HEADER_SIZE] = {0};
 
         memcpy(bytes, magic, STORAGE_MAGIC_SIZE);
         bytes[8]  = (unsigned char)(version & 0xff);
@@ -147,18 +147,19 @@ static void _test_broken(void) {
         _write_file(text, 5);
         _expect(TEST_FILE, ANALYZER_FIND, FILE_CHECK_STATE_FAILED,
                 FILE_CHECK_ERROR_TOO_SHORT, "broken: short file");
-        _write_file(text, sizeof text);
+        _write_header("notdb\0\0\0", STORAGE_VERSION);
         _expect(TEST_FILE, ANALYZER_FIND, FILE_CHECK_STATE_FAILED,
                 FILE_CHECK_ERROR_BAD_MAGIC, "broken: wrong magic");
         _write_header("OOPDX\0\0\0", STORAGE_VERSION);
         _expect(TEST_FILE, ANALYZER_NEW, FILE_CHECK_STATE_FAILED,
                 FILE_CHECK_ERROR_BAD_MAGIC, "broken: almost the magic");
-        _write_header(STORAGE_MAGIC, 2);
+        _write_header(STORAGE_MAGIC, STORAGE_VERSION + 1);
         _expect(TEST_FILE, ANALYZER_FIND, FILE_CHECK_STATE_FAILED,
                 FILE_CHECK_ERROR_BAD_VERSION, "broken: newer version");
 
         (void)i_file_check(TEST_FILE, &statement, &error);
-        CHECK(error.version == 2, "broken: version is reported");
+        CHECK(error.version == STORAGE_VERSION + 1,
+              "broken: version is reported");
         _write_header(STORAGE_MAGIC, 0x01000001ul);
         (void)i_file_check(TEST_FILE, &statement, &error);
         CHECK(error.type == FILE_CHECK_ERROR_BAD_VERSION &&
