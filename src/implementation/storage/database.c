@@ -3,6 +3,370 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "interface/storage/directory.h"
+
+#define DIR_ENTRY_FIXED_SIZE 10U
+
+static bool dir_kind_page(const struct database* db, int kind,
+                          uint32_t* const page) {
+        if (db == NULL || page == NULL) {
+                return false;
+        }
+
+        switch (kind) {
+                case CLASS_DIR:
+                        *page = db->hdr.class_dir_page;
+                        return true;
+                case IFACE_DIR:
+                        *page = db->hdr.iface_dir_page;
+                        return true;
+                case FUNC_DIR:
+                        *page = db->hdr.func_dir_page;
+                        return true;
+                default:
+                        return false;
+        }
+}
+
+static bool dir_entry_at(const uint8_t* page, uint16_t free_off,
+                         uint16_t offset, uint16_t* next_offset,
+                         struct dir_entry* entry) {
+        uint16_t name_len;
+        uint16_t entry_len;
+
+        if (page == NULL || offset > free_off ||
+            (uint16_t)(free_off - offset) < (uint16_t)DIR_ENTRY_FIXED_SIZE) {
+                return false;
+        }
+
+        name_len = get_u16_le(page + offset);
+        if (name_len > UINT16_MAX - DIR_ENTRY_FIXED_SIZE) {
+                return false;
+        }
+        entry_len = (uint16_t)(DIR_ENTRY_FIXED_SIZE + name_len);
+        if (entry_len > free_off - offset) {
+                return false;
+        }
+
+        if (entry != NULL) {
+                entry->name =
+                    (const char*)(page + offset + DIR_ENTRY_FIXED_SIZE);
+                entry->loc_page = get_u32_le(page + offset + 2);
+                entry->loc_off  = get_u16_le(page + offset + 6);
+                entry->loc_len  = get_u16_le(page + offset + 8);
+        }
+        if (next_offset != NULL) {
+                *next_offset = (uint16_t)(offset + entry_len);
+        }
+        return true;
+}
+
+static bool dir_entry_matches(const uint8_t* page, uint16_t offset,
+                              const char* name) {
+        size_t name_len;
+
+        if (page == NULL || name == NULL) {
+                return false;
+        }
+
+        name_len = strlen(name);
+        return name_len == get_u16_le(page + offset) &&
+               memcmp(page + offset + DIR_ENTRY_FIXED_SIZE, name, name_len) ==
+                   0;
+}
+
+static void dir_init_page(uint8_t* page) {
+        memset(page, 0, DB_PAGE_SIZE);
+        put_u16_le(page + DIR_PAGE_COUNT_OFF, 0);
+        put_u16_le(page + DIR_PAGE_FREE_OFF_OFF, DIR_PAGE_HDR_SIZE);
+        put_u32_le(page + DIR_PAGE_NEXT_OFF, 0);
+}
+
+bool db_dir_ensure_chain(struct database* db, uint32_t* first_page_out) {
+        uint32_t page_no;
+        uint8_t page[DB_PAGE_SIZE];
+
+        if (db == NULL || first_page_out == NULL ||
+            !db_alloc_page(db, &page_no)) {
+                return false;
+        }
+
+        dir_init_page(page);
+        if (!db_write_page(db, page_no, page)) {
+                db_free_page(db, page_no);
+                return false;
+        }
+
+        *first_page_out = page_no;
+        return true;
+}
+
+bool db_dir_get_first_page(const struct database* db, int kind,
+                           uint32_t* out_page) {
+        return dir_kind_page(db, kind, out_page) && *out_page != 0;
+}
+
+bool db_dir_set_first_page(struct database* db, int kind, uint32_t first_page) {
+        if (db == NULL) {
+                return false;
+        }
+
+        switch (kind) {
+                case CLASS_DIR:
+                        db->hdr.class_dir_page = first_page;
+                        break;
+                case IFACE_DIR:
+                        db->hdr.iface_dir_page = first_page;
+                        break;
+                case FUNC_DIR:
+                        db->hdr.func_dir_page = first_page;
+                        break;
+                default:
+                        return false;
+        }
+
+        database_mark_modified(db);
+        return true;
+}
+
+bool db_dir_find(struct database* db, int kind, const char* name,
+                 struct dir_entry* entry) {
+        uint32_t page_no;
+
+        if (db == NULL || name == NULL ||
+            !db_dir_get_first_page(db, kind, &page_no)) {
+                return false;
+        }
+
+        while (page_no != 0) {
+                uint16_t count;
+                uint16_t free_off;
+                uint16_t offset = DIR_PAGE_HDR_SIZE;
+                size_t i;
+
+                if (!db_read_page(db, page_no, db->page_buf)) {
+                        return false;
+                }
+
+                count    = get_u16_le(db->page_buf + DIR_PAGE_COUNT_OFF);
+                free_off = get_u16_le(db->page_buf + DIR_PAGE_FREE_OFF_OFF);
+                if (free_off < DIR_PAGE_HDR_SIZE || free_off > DB_PAGE_SIZE) {
+                        return false;
+                }
+
+                for (i = 0; i < count; ++i) {
+                        uint16_t next_offset;
+
+                        if (!dir_entry_at(db->page_buf, free_off, offset,
+                                          &next_offset, entry)) {
+                                return false;
+                        }
+                        if (dir_entry_matches(db->page_buf, offset, name)) {
+                                return true;
+                        }
+                        offset = next_offset;
+                }
+                page_no = get_u32_le(db->page_buf + DIR_PAGE_NEXT_OFF);
+        }
+
+        return false;
+}
+
+bool db_dir_put(struct database* db, int kind, const char* name,
+                uint32_t loc_page, uint16_t loc_off, uint16_t loc_len,
+                bool overwrite) {
+        uint32_t page_no;
+        size_t name_len;
+        uint16_t entry_len;
+
+        if (db == NULL || name == NULL || name[0] == '\0') {
+                return false;
+        }
+
+        name_len = strlen(name);
+        if (name_len > UINT16_MAX || name_len > DB_PAGE_SIZE -
+                                                    DIR_PAGE_HDR_SIZE -
+                                                    DIR_ENTRY_FIXED_SIZE) {
+                return false;
+        }
+        entry_len = (uint16_t)(DIR_ENTRY_FIXED_SIZE + name_len);
+
+        if (!db_dir_get_first_page(db, kind, &page_no)) {
+                if (!db_dir_ensure_chain(db, &page_no) ||
+                    !db_dir_set_first_page(db, kind, page_no)) {
+                        return false;
+                }
+        }
+
+        for (;;) {
+                uint16_t count;
+                uint16_t free_off;
+                uint16_t offset = DIR_PAGE_HDR_SIZE;
+                uint32_t next_page;
+                size_t i;
+
+                if (!db_read_page(db, page_no, db->page_buf)) {
+                        return false;
+                }
+
+                count     = get_u16_le(db->page_buf + DIR_PAGE_COUNT_OFF);
+                free_off  = get_u16_le(db->page_buf + DIR_PAGE_FREE_OFF_OFF);
+                next_page = get_u32_le(db->page_buf + DIR_PAGE_NEXT_OFF);
+                if (free_off < DIR_PAGE_HDR_SIZE || free_off > DB_PAGE_SIZE) {
+                        return false;
+                }
+
+                for (i = 0; i < count; ++i) {
+                        uint16_t next_offset;
+
+                        if (!dir_entry_at(db->page_buf, free_off, offset,
+                                          &next_offset, NULL)) {
+                                return false;
+                        }
+                        if (dir_entry_matches(db->page_buf, offset, name)) {
+                                if (!overwrite) {
+                                        return false;
+                                }
+                                put_u32_le(db->page_buf + offset + 2, loc_page);
+                                put_u16_le(db->page_buf + offset + 6, loc_off);
+                                put_u16_le(db->page_buf + offset + 8, loc_len);
+                                return db_write_page(db, page_no, db->page_buf);
+                        }
+                        offset = next_offset;
+                }
+
+                if (entry_len <= DB_PAGE_SIZE - free_off) {
+                        put_u16_le(db->page_buf + free_off, (uint16_t)name_len);
+                        put_u32_le(db->page_buf + free_off + 2, loc_page);
+                        put_u16_le(db->page_buf + free_off + 6, loc_off);
+                        put_u16_le(db->page_buf + free_off + 8, loc_len);
+                        memcpy(db->page_buf + free_off + DIR_ENTRY_FIXED_SIZE,
+                               name, name_len);
+                        put_u16_le(db->page_buf + DIR_PAGE_COUNT_OFF,
+                                   (uint16_t)(count + 1));
+                        put_u16_le(db->page_buf + DIR_PAGE_FREE_OFF_OFF,
+                                   (uint16_t)(free_off + entry_len));
+                        return db_write_page(db, page_no, db->page_buf);
+                }
+
+                if (next_page == 0) {
+                        if (!db_dir_ensure_chain(db, &next_page)) {
+                                return false;
+                        }
+                        put_u32_le(db->page_buf + DIR_PAGE_NEXT_OFF, next_page);
+                        if (!db_write_page(db, page_no, db->page_buf)) {
+                                return false;
+                        }
+                }
+                page_no = next_page;
+        }
+}
+
+bool db_dir_remove(struct database* db, int kind, const char* name) {
+        uint32_t page_no;
+
+        if (db == NULL || name == NULL ||
+            !db_dir_get_first_page(db, kind, &page_no)) {
+                return false;
+        }
+
+        while (page_no != 0) {
+                uint16_t count;
+                uint16_t free_off;
+                uint16_t offset = DIR_PAGE_HDR_SIZE;
+                size_t i;
+
+                if (!db_read_page(db, page_no, db->page_buf)) {
+                        return false;
+                }
+
+                count    = get_u16_le(db->page_buf + DIR_PAGE_COUNT_OFF);
+                free_off = get_u16_le(db->page_buf + DIR_PAGE_FREE_OFF_OFF);
+                if (free_off < DIR_PAGE_HDR_SIZE || free_off > DB_PAGE_SIZE) {
+                        return false;
+                }
+
+                for (i = 0; i < count; ++i) {
+                        uint16_t next_offset;
+
+                        if (!dir_entry_at(db->page_buf, free_off, offset,
+                                          &next_offset, NULL)) {
+                                return false;
+                        }
+                        if (dir_entry_matches(db->page_buf, offset, name)) {
+                                size_t remaining = free_off - next_offset;
+
+                                memmove(db->page_buf + offset,
+                                        db->page_buf + next_offset, remaining);
+                                memset(db->page_buf + free_off -
+                                           (next_offset - offset),
+                                       0, next_offset - offset);
+                                put_u16_le(db->page_buf + DIR_PAGE_COUNT_OFF,
+                                           (uint16_t)(count - 1));
+                                put_u16_le(db->page_buf + DIR_PAGE_FREE_OFF_OFF,
+                                           (uint16_t)(free_off -
+                                                      (next_offset - offset)));
+                                return db_write_page(db, page_no, db->page_buf);
+                        }
+                        offset = next_offset;
+                }
+                page_no = get_u32_le(db->page_buf + DIR_PAGE_NEXT_OFF);
+        }
+
+        return false;
+}
+
+bool db_class_dir_find(struct database* db, const char* name,
+                       uint32_t* out_page, uint16_t* out_off,
+                       uint16_t* out_len) {
+        struct dir_entry entry;
+
+        if (out_page == NULL || out_off == NULL || out_len == NULL ||
+            !db_dir_find(db, CLASS_DIR, name, &entry)) {
+                return false;
+        }
+        *out_page = entry.loc_page;
+        *out_off  = entry.loc_off;
+        *out_len  = entry.loc_len;
+        return true;
+}
+
+bool db_class_dir_put(struct database* db, const char* name, uint32_t loc_page,
+                      uint16_t loc_off, uint16_t loc_len, bool overwrite) {
+        return db_dir_put(db, CLASS_DIR, name, loc_page, loc_off, loc_len,
+                          overwrite);
+}
+
+bool db_class_dir_remove(struct database* db, const char* name) {
+        return db_dir_remove(db, CLASS_DIR, name);
+}
+
+bool db_interface_dir_find(struct database* db, const char* name,
+                           uint32_t* out_page, uint16_t* out_off,
+                           uint16_t* out_len) {
+        struct dir_entry entry;
+
+        if (out_page == NULL || out_off == NULL || out_len == NULL ||
+            !db_dir_find(db, IFACE_DIR, name, &entry)) {
+                return false;
+        }
+        *out_page = entry.loc_page;
+        *out_off  = entry.loc_off;
+        *out_len  = entry.loc_len;
+        return true;
+}
+
+bool db_interface_dir_put(struct database* db, const char* name,
+                          uint32_t loc_page, uint16_t loc_off, uint16_t loc_len,
+                          bool overwrite) {
+        return db_dir_put(db, IFACE_DIR, name, loc_page, loc_off, loc_len,
+                          overwrite);
+}
+
+bool db_interface_dir_remove(struct database* db, const char* name) {
+        return db_dir_remove(db, IFACE_DIR, name);
+}
+
 void put_u16_le(uint8_t* p, uint16_t v) {
         p[0] = (uint8_t)(v);
         p[1] = (uint8_t)(v >> 8);
@@ -165,64 +529,6 @@ bool db_free_page(struct database* db, uint32_t page_no) {
         return true;
 }
 
-/* Directory stubs */
-bool db_class_dir_find(struct database* db, const char* name,
-                       uint32_t* out_page, uint16_t* out_off,
-                       uint16_t* out_len) {
-        (void)db;
-        (void)name;
-        (void)out_page;
-        (void)out_off;
-        (void)out_len;
-        return false;
-}
-
-bool db_class_dir_put(struct database* db, const char* name, uint32_t loc_page,
-                      uint16_t loc_off, uint16_t loc_len, bool overwrite) {
-        (void)db;
-        (void)name;
-        (void)loc_page;
-        (void)loc_off;
-        (void)loc_len;
-        (void)overwrite;
-        return false;
-}
-
-bool db_class_dir_remove(struct database* db, const char* name) {
-        (void)db;
-        (void)name;
-        return false;
-}
-
-bool db_interface_dir_find(struct database* db, const char* name,
-                           uint32_t* out_page, uint16_t* out_off,
-                           uint16_t* out_len) {
-        (void)db;
-        (void)name;
-        (void)out_page;
-        (void)out_off;
-        (void)out_len;
-        return false;
-}
-
-bool db_interface_dir_put(struct database* db, const char* name,
-                          uint32_t loc_page, uint16_t loc_off, uint16_t loc_len,
-                          bool overwrite) {
-        (void)db;
-        (void)name;
-        (void)loc_page;
-        (void)loc_off;
-        (void)loc_len;
-        (void)overwrite;
-        return false;
-}
-
-bool db_interface_dir_remove(struct database* db, const char* name) {
-        (void)db;
-        (void)name;
-        return false;
-}
-
 bool db_function_dir_find(struct database* db, const char* class_name,
                           const char* func_name, uint32_t* out_page,
                           uint16_t* out_off, uint16_t* out_len) {
@@ -253,25 +559,5 @@ bool db_function_dir_remove(struct database* db, const char* class_name,
         (void)db;
         (void)class_name;
         (void)func_name;
-        return false;
-}
-
-bool db_dir_ensure_chain(struct database* db, uint32_t* first_page_out) {
-        (void)db;
-        (void)first_page_out;
-        return false;
-}
-
-bool db_dir_get_first_page(const struct database* db, int kind, uint32_t* out) {
-        (void)db;
-        (void)kind;
-        (void)out;
-        return false;
-}
-
-bool db_dir_set_first_page(struct database* db, int kind, uint32_t first_page) {
-        (void)db;
-        (void)kind;
-        (void)first_page;
         return false;
 }

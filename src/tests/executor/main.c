@@ -4,8 +4,12 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 
 #include "interface/executor/executor.h"
+#include "interface/storage/page.h"
+
+#define TEST_FILE "build/executor-test.oopdb"
 
 static int checks   = 0;
 static int failures = 0;
@@ -67,10 +71,18 @@ static void _test_routing(void) {
         for (i = 0; i < KIND_COUNT; i++) {
                 struct analyzer_statement st =
                     _statement(KINDS[i].kind, KINDS[i].group);
+                enum EXECUTOR_RESULT result;
 
                 database_init(&db, "unused.oopdb", false);
-                CHECK(i_execute(&db, &st) != EXECUTOR_ERROR_BAD_STATEMENT,
-                      "a kind in its own group is routed");
+                result = i_execute(&db, &st);
+                if (KINDS[i].kind == ANALYZER_CREATE_CLASS ||
+                    KINDS[i].kind == ANALYZER_CREATE_INTERFACE) {
+                        CHECK(result == EXECUTOR_ERROR_BAD_STATEMENT,
+                              "implemented command rejects empty statement");
+                } else {
+                        CHECK(result != EXECUTOR_ERROR_BAD_STATEMENT,
+                              "a kind in its own group is routed");
+                }
                 CHECK(!database_is_modified(&db),
                       "a command that does nothing leaves the database alone");
         }
@@ -123,10 +135,57 @@ static void _test_bad_input(void) {
               "no statement");
 }
 
+static void _test_create_interface(void) {
+        struct analyzer_field fields[] = {
+            {.name = "name", .type = {.kind = ANALYZER_TYPE_TEXT}},
+            {.name = "active", .type = {.kind = ANALYZER_TYPE_BOOL}},
+        };
+        struct analyzer_statement statement = {
+            .kind   = ANALYZER_CREATE_INTERFACE,
+            .group  = ANALYZER_GROUP_SCHEMA,
+            .name   = "Named",
+            .fields = {.items = fields, .count = 2, .capacity = 2},
+        };
+        struct database db;
+        uint32_t page;
+        uint16_t offset;
+        uint16_t length;
+        uint8_t definition[DB_PAGE_SIZE];
+
+        remove(TEST_FILE);
+        database_init(&db, TEST_FILE, true);
+        CHECK(i_execute(&db, &statement) == EXECUTOR_OK,
+              "create interface succeeds");
+        CHECK(db.hdr.iface_count == 1, "create interface increments count");
+        CHECK(db_interface_dir_find(&db, "Named", &page, &offset, &length),
+              "create interface is indexed");
+        CHECK(offset == 0 && length == 28, "create interface definition size");
+        CHECK(db_read_page(&db, page, definition),
+              "create interface definition is readable");
+        CHECK(get_u16_le(definition) == 2, "create interface field count");
+        CHECK(get_u16_le(definition + 2) == 4 &&
+                  memcmp(definition + 4, "text", 4) == 0 &&
+                  get_u16_le(definition + 8) == 4 &&
+                  memcmp(definition + 10, "name", 4) == 0,
+              "create interface writes first field");
+        CHECK(i_execute(&db, &statement) == EXECUTOR_ERROR_BAD_STATEMENT,
+              "create interface rejects duplicate name");
+        CHECK(db.hdr.iface_count == 1,
+              "duplicate interface leaves count unchanged");
+        database_close(&db);
+
+        database_init(&db, TEST_FILE, false);
+        CHECK(db_interface_dir_find(&db, "Named", &page, &offset, &length),
+              "create interface survives reopen");
+        database_close(&db);
+        remove(TEST_FILE);
+}
+
 int main(void) {
         _test_routing();
         _test_mismatch();
         _test_bad_input();
+        _test_create_interface();
         printf("executor tests:\n");
         printf("%d checks, %d failures\n", checks, failures);
         return failures != 0;

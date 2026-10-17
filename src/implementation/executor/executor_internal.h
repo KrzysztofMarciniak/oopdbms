@@ -14,6 +14,9 @@
 #include "interface/analyzer/statement.h"
 #include "interface/storage/database.h"
 
+size_t executor_type_name(const struct analyzer_type* type, char* out,
+                          size_t out_size);
+
 /**
  * @brief CREATE CLASS <n> [EXTENDS <class>] [IMPLEMENTS <interface>[, ...]]
  * (<field> <type>[, ...])
