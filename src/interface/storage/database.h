@@ -15,6 +15,14 @@
 #include "interface/storage/page.h"
 
 /**
+ * @brief Little-endian byte manipulation functions
+ */
+void put_u16_le(uint8_t* p, uint16_t v);
+void put_u32_le(uint8_t* p, uint32_t v);
+uint16_t get_u16_le(const uint8_t* p);
+uint32_t get_u32_le(const uint8_t* p);
+
+/**
  * @brief Cached database header (Page 0, v2), all values in host order after
  * load.
  */
