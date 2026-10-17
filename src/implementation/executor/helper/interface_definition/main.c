@@ -1,12 +1,15 @@
 
 #include "implementation/executor/helper/interface_definition/main.h"
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "implementation/executor/helper/basic/main.h"
 #include "implementation/executor/helper/binary_primitives/main.h"
+#include "implementation/executor/helper/type_name/main.h"
+#include "interface/storage/page.h"
 
 static int helper_valid_type_code(uint8_t type_code) {
         return type_code >= HELPER_TYPE_INTEGER &&
@@ -166,6 +169,101 @@ int helper_write_interface_page_definition(
         }
         *written = (uint16_t)offset;
         return 0;
+}
+
+enum EXECUTOR_RESULT helper_create_interface(
+    struct database* db, const struct analyzer_statement* statement) {
+        size_t i;
+        uint32_t existing_page;
+        uint16_t existing_offset;
+        uint16_t existing_length;
+        uint32_t definition_page            = 0;
+        bool page_allocated                 = false;
+        helper_interface_page_field* fields = NULL;
+        char* type_names                    = NULL;
+        helper_interface_page_definition definition;
+        uint16_t definition_length;
+        enum EXECUTOR_RESULT result = EXECUTOR_ERROR_BAD_STATEMENT;
+
+        if (db == NULL || statement == NULL ||
+            statement->kind != ANALYZER_CREATE_INTERFACE ||
+            statement->group != ANALYZER_GROUP_SCHEMA ||
+            statement->name == NULL || statement->name[0] == '\0' ||
+            strlen(statement->name) > DB_PAGE_SIZE - DIR_PAGE_HDR_SIZE - 10u ||
+            statement->fields.count > UINT16_MAX ||
+            (statement->fields.count > 0 && statement->fields.items == NULL) ||
+            db->hdr.iface_count == UINT32_MAX) {
+                return EXECUTOR_ERROR_BAD_STATEMENT;
+        }
+
+        if (db_interface_dir_find(db, statement->name, &existing_page,
+                                  &existing_offset, &existing_length)) {
+                return EXECUTOR_ERROR_BAD_STATEMENT;
+        }
+
+        if (statement->fields.count > 0) {
+                fields     = calloc(statement->fields.count, sizeof(*fields));
+                type_names = calloc(statement->fields.count, DB_PAGE_SIZE);
+                if (fields == NULL || type_names == NULL) {
+                        goto cleanup;
+                }
+        }
+
+        for (i = 0; i < statement->fields.count; ++i) {
+                const struct analyzer_field* field =
+                    &statement->fields.items[i];
+                size_t j;
+
+                if (field->name == NULL || field->name[0] == '\0') {
+                        goto cleanup;
+                }
+
+                fields[i].type_name = type_names + i * DB_PAGE_SIZE;
+                fields[i].name      = field->name;
+                if (helper_type_name(&field->type, (char*)fields[i].type_name,
+                                     DB_PAGE_SIZE) == 0) {
+                        goto cleanup;
+                }
+
+                for (j = 0; j < i; ++j) {
+                        if (strcmp(field->name,
+                                   statement->fields.items[j].name) == 0) {
+                                goto cleanup;
+                        }
+                }
+        }
+
+        definition.field_count = (uint16_t)statement->fields.count;
+        definition.fields      = fields;
+        if (!db_alloc_page(db, &definition_page)) {
+                result = EXECUTOR_ERROR_STORAGE_FAILED;
+                goto cleanup;
+        }
+        page_allocated = true;
+
+        if (helper_write_interface_page_definition(
+                db->page_buf, sizeof(db->page_buf), &definition,
+                &definition_length) != 0) {
+                goto cleanup;
+        }
+        if (!db_write_page(db, definition_page, db->page_buf) ||
+            !db_interface_dir_put(db, statement->name, definition_page, 0,
+                                  definition_length, false)) {
+                result = EXECUTOR_ERROR_STORAGE_FAILED;
+                goto cleanup;
+        }
+
+        db->hdr.iface_count++;
+        database_mark_modified(db);
+        result = EXECUTOR_OK;
+
+cleanup:
+        if (result != EXECUTOR_OK && page_allocated) {
+                db_free_page(db, definition_page);
+        }
+        free(type_names);
+        free(fields);
+        return result;
 }
 
 void helper_free_interface_definition(helper_interface_definition* definition) {

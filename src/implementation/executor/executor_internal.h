@@ -5,17 +5,13 @@
  * @file executor_internal.h
  * @brief One function per command, called only by the executor dispatch.
  *
- * Each function receives a statement of its own kind, so it can read the
- * fields listed in its documentation without checking the kind again. A
- * function that changes data calls database_mark_modified().
+ * Each function receives a statement of its own kind. Database-backed
+ * operations are delegated to executor helpers.
  */
 
 #include "error/executor/executor_error.h"
 #include "interface/analyzer/statement.h"
 #include "interface/storage/database.h"
-
-size_t executor_type_name(const struct analyzer_type* type, char* out,
-                          size_t out_size);
 
 /**
  * @brief CREATE CLASS <n> [EXTENDS <class>] [IMPLEMENTS <interface>[, ...]]

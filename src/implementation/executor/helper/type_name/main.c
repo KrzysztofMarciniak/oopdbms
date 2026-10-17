@@ -1,18 +1,13 @@
-/**
- * @file type_name.c
- * @brief Spell a field type the way the README does, for storage and DESCRIBE.
- */
+#include "implementation/executor/helper/type_name/main.h"
 
 #include <stdio.h>
 
-#include "implementation/executor/executor_internal.h"
-
-size_t executor_type_name(const struct analyzer_type* type, char* out,
-                          size_t out_size) {
+size_t helper_type_name(const struct analyzer_type* type, char* out,
+                        size_t out_size) {
         const char* base = NULL;
         int written;
 
-        if (!type || !out || out_size == 0) {
+        if (type == NULL || out == NULL || out_size == 0) {
                 return 0;
         }
 
@@ -30,13 +25,13 @@ size_t executor_type_name(const struct analyzer_type* type, char* out,
                         base = "bool";
                         break;
                 case ANALYZER_TYPE_POINTER:
-                        /* Only a pointer carries a class name. */
-                        if (!type->class_name || !type->class_name[0]) {
+                        if (type->class_name == NULL ||
+                            type->class_name[0] == '\0') {
                                 return 0;
                         }
                         written = snprintf(out, out_size, "pointer %s",
                                            type->class_name);
-                        return (written > 0 && (size_t)written < out_size)
+                        return written > 0 && (size_t)written < out_size
                                    ? (size_t)written
                                    : 0;
                 default:
@@ -44,6 +39,5 @@ size_t executor_type_name(const struct analyzer_type* type, char* out,
         }
 
         written = snprintf(out, out_size, "%s", base);
-        return (written > 0 && (size_t)written < out_size) ? (size_t)written
-                                                           : 0;
+        return written > 0 && (size_t)written < out_size ? (size_t)written : 0;
 }

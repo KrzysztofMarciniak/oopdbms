@@ -5,6 +5,10 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "error/executor/executor_error.h"
+#include "interface/analyzer/statement.h"
+#include "interface/storage/database.h"
+
 #define HELPER_INTERFACE_DEFINITION_HEADER_SIZE 4u
 #define HELPER_FIELD_DESCRIPTOR_FIXED_SIZE 7u
 
@@ -71,6 +75,10 @@ int helper_write_interface_definition(
 int helper_write_interface_page_definition(
     uint8_t* buffer, size_t buffer_size,
     const helper_interface_page_definition* definition, uint16_t* written);
+
+/* Validate, serialize, and register a CREATE INTERFACE statement. */
+enum EXECUTOR_RESULT helper_create_interface(
+    struct database* db, const struct analyzer_statement* statement);
 
 /*
  * Deserialize an interface definition from the current file position.

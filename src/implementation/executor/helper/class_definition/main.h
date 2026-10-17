@@ -4,6 +4,10 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "error/executor/executor_error.h"
+#include "interface/analyzer/statement.h"
+#include "interface/storage/database.h"
+
 #define HELPER_CLASS_DEFINITION_HEADER_SIZE 16u
 
 #define HELPER_CLASS_TYPE_INTEGER 1u
@@ -78,6 +82,11 @@ int helper_write_class_definition(FILE* file,
 int helper_write_class_page_definition(
     uint8_t* buffer, size_t buffer_size,
     const helper_class_page_definition* definition, uint16_t* written);
+
+/* Validate, serialize, and register a CREATE CLASS statement in the database.
+ */
+enum EXECUTOR_RESULT helper_create_class(
+    struct database* db, const struct analyzer_statement* statement);
 
 /*
  * Deserialize a class definition from the current file position.
