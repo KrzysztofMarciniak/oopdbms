@@ -228,8 +228,9 @@ invalid database layout.
 src/main.c                         Runs the steps in order
 src/interface/<name>/              Public interface headers for a step
 src/implementation/<name>/         Implementation of a step
+src/implementation/executor/       Focused executor modules; see its README
 src/error/<name>/                  Error types and printing
-src/tests/<name>/main.c             Test program for a step
+src/tests/<name>/*.c                Test programs for a step
 ```
 
 Tests print `N checks, M failures` and exit with a non-zero status if any check fails.

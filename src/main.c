@@ -1,11 +1,7 @@
-#include "error/analyzer/main.h"
+#include "interface/analyzer/main.h"
 
 #include <stdio.h>
 
-#include "error/executor/executor_error.h"
-#include "error/file-check/main.h"
-#include "error/tokenizer/main.h"
-#include "interface/analyzer/main.h"
 #include "interface/executor/executor.h"
 #include "interface/file-check/main.h"
 #include "interface/help/main.h"
@@ -34,16 +30,12 @@ int main(int argc, char** argv) {
                 return 0;
         }
 
-        // 1. tokenizer
         tokens = i_tokenize(argc, argv, &tokenizer_error);
         if (tokenizer_error.type != TOKENIZER_OK) {
                 tokenizer_error_print(tokenizer_error);
                 return 1;
         }
 
-        // 2. (syntax) analyzer
-        // 2.1 wrong->print error
-        // 2.2 correct->next
         statement = i_analyze(&tokens, &analyzer_error);
         i_tokenizer_free(&tokens);
         if (analyzer_error.type != ANALYZER_OK) {
@@ -51,7 +43,6 @@ int main(int argc, char** argv) {
                 return 1;
         }
 
-        // 3.	 file_check
         path       = i_file_check_path();
         file_state = i_file_check(path, &statement, &file_error);
         if (file_error.type != FILE_CHECK_OK) {
@@ -60,7 +51,6 @@ int main(int argc, char** argv) {
                 return 1;
         }
 
-        // 4.  execute
         if (!database_init_format_mode(
                 &database, path, file_state == FILE_CHECK_STATE_CREATED,
                 _statement_is_read_only(statement.kind))) {

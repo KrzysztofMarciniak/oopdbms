@@ -5,6 +5,20 @@ The executor implements the commands listed in the repository-root
 the checked serialization helpers under `helper/`, and commits the header and
 metadata locator after each successful mutation.
 
+## Implementation layout
+
+- `executor.c` validates and dispatches statements, then saves a modified
+  database.
+- `executor_storage.c` contains common format-file lookups, identifier
+  allocation, and table-writing helpers. `executor_schema_support.c` owns
+  class and interface views, inherited-schema handling, and schema constraints.
+- `executor_schema.c` implements class and interface mutations;
+  `executor_objects.c` implements object creation, lookup, update, and deletion.
+- `executor_function_definitions.c` handles function definitions and
+  expression validation; `executor_expression.c` parses and evaluates
+  expressions; `executor_function_call.c` loads and executes functions.
+- `executor_metadata.c` implements listings and class descriptions.
+
 ## Supported commands
 
 - Schema: `CREATE CLASS`, `DROP CLASS`, all documented `ALTER CLASS` actions,
