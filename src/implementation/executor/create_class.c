@@ -8,7 +8,9 @@
 #include <string.h>
 
 #include "implementation/executor/executor_internal.h"
+#include "implementation/executor/helper/class_definition/main.h"
 #include "interface/storage/database.h"
+#include "interface/storage/page.h"
 
 /* put_u16_le and put_u32_le are now defined in database.c */
 

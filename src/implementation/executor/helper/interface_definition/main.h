@@ -27,6 +27,16 @@ typedef struct helper_interface_definition {
         helper_interface_field* fields;
 } helper_interface_definition;
 
+typedef struct helper_interface_page_field {
+        const char* type_name;
+        const char* name;
+} helper_interface_page_field;
+
+typedef struct helper_interface_page_definition {
+        uint16_t field_count;
+        const helper_interface_page_field* fields;
+} helper_interface_page_definition;
+
 /*
  * Serialize an interface definition at the current file position.
  *
@@ -47,6 +57,20 @@ typedef struct helper_interface_definition {
  */
 int helper_write_interface_definition(
     FILE* file, const helper_interface_definition* definition);
+
+/*
+ * Serialize the page-based v2 interface definition.
+ *
+ * Layout:
+ *   u16 field_count
+ *   repeated: u16 type_length, type bytes, u16 name_length, name bytes
+ *
+ * The interface name belongs to the page directory entry, not this blob.
+ * Returns 0 on success, -1 on failure.
+ */
+int helper_write_interface_page_definition(
+    uint8_t* buffer, size_t buffer_size,
+    const helper_interface_page_definition* definition, uint16_t* written);
 
 /*
  * Deserialize an interface definition from the current file position.

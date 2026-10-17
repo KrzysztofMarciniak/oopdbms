@@ -13,26 +13,6 @@ static int helper_valid_type_code(uint8_t type_code) {
                type_code <= HELPER_TYPE_POINTER;
 }
 
-static int helper_write_name(FILE* file, const char* name) {
-        size_t length;
-
-        if (file == NULL || name == NULL) {
-                return -1;
-        }
-
-        length = strlen(name);
-
-        if (length > UINT16_MAX) {
-                return -1;
-        }
-
-        if (helper_write_u16(file, (uint16_t)length) != 0) {
-                return -1;
-        }
-
-        return helper_write_bytes(file, name, length);
-}
-
 static int helper_read_name(FILE* file, uint16_t length, char** name) {
         char* result;
 
@@ -130,6 +110,61 @@ int helper_write_interface_definition(
                 }
         }
 
+        return 0;
+}
+
+int helper_write_interface_page_definition(
+    uint8_t* buffer, size_t buffer_size,
+    const helper_interface_page_definition* definition, uint16_t* written) {
+        size_t offset = 0;
+        size_t i;
+
+        if (buffer == NULL || definition == NULL || written == NULL ||
+            buffer_size < sizeof(uint16_t) ||
+            (definition->field_count > 0 && definition->fields == NULL)) {
+                return -1;
+        }
+
+        buffer[offset++] = (uint8_t)definition->field_count;
+        buffer[offset++] = (uint8_t)(definition->field_count >> 8);
+
+        for (i = 0; i < definition->field_count; ++i) {
+                const helper_interface_page_field* field =
+                    &definition->fields[i];
+                size_t type_length;
+                size_t name_length;
+                size_t field_length;
+
+                if (field->type_name == NULL || field->name == NULL) {
+                        return -1;
+                }
+
+                type_length = strlen(field->type_name);
+                name_length = strlen(field->name);
+                if (type_length == 0 || type_length > UINT16_MAX ||
+                    name_length == 0 || name_length > UINT16_MAX) {
+                        return -1;
+                }
+
+                field_length = sizeof(uint16_t) * 2 + type_length + name_length;
+                if (field_length > buffer_size - offset) {
+                        return -1;
+                }
+
+                buffer[offset++] = (uint8_t)type_length;
+                buffer[offset++] = (uint8_t)(type_length >> 8);
+                memcpy(buffer + offset, field->type_name, type_length);
+                offset += type_length;
+                buffer[offset++] = (uint8_t)name_length;
+                buffer[offset++] = (uint8_t)(name_length >> 8);
+                memcpy(buffer + offset, field->name, name_length);
+                offset += name_length;
+        }
+
+        if (offset > UINT16_MAX) {
+                return -1;
+        }
+        *written = (uint16_t)offset;
         return 0;
 }
 

@@ -172,6 +172,32 @@ static void _test_create_interface(void) {
               "create interface rejects duplicate name");
         CHECK(db.hdr.iface_count == 1,
               "duplicate interface leaves count unchanged");
+        struct analyzer_field dup_fields[] = {
+            {.name = "field1", .type = {.kind = ANALYZER_TYPE_TEXT}},
+            {.name = "field1", .type = {.kind = ANALYZER_TYPE_INTEGER}},
+        };
+        struct analyzer_statement dup_statement = {
+            .kind   = ANALYZER_CREATE_INTERFACE,
+            .group  = ANALYZER_GROUP_SCHEMA,
+            .name   = "DuplicateFields",
+            .fields = {.items = dup_fields, .count = 2, .capacity = 2},
+        };
+        CHECK(i_execute(&db, &dup_statement) == EXECUTOR_ERROR_BAD_STATEMENT,
+              "create interface rejects duplicate field names");
+
+        struct analyzer_field invalid_fields[] = {
+            {.name = "", .type = {.kind = ANALYZER_TYPE_TEXT}},
+        };
+        struct analyzer_statement invalid_statement = {
+            .kind   = ANALYZER_CREATE_INTERFACE,
+            .group  = ANALYZER_GROUP_SCHEMA,
+            .name   = "InvalidField",
+            .fields = {.items = invalid_fields, .count = 1, .capacity = 1},
+        };
+        CHECK(
+            i_execute(&db, &invalid_statement) == EXECUTOR_ERROR_BAD_STATEMENT,
+            "create interface rejects empty field name");
+
         database_close(&db);
 
         database_init(&db, TEST_FILE, false);
