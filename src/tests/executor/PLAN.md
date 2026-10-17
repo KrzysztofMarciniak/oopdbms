@@ -27,10 +27,12 @@ with the README.
 - [x] Make the current schema format tests pass against the README layout.
 - [x] Add a pointer-field test for its type code and target class ID
   (`create_class_pointer.c`).
-- [x] Exercise every `ALTER CLASS` action and restrictive class/interface
-  deletion behavior in the command-level executor test.
-- [ ] Add raw-format assertions for schema table counts, offsets, lengths,
-  names, and stable IDs after schema mutations.
+- [x] Exercise every `ALTER CLASS` action, descendant/object field-change
+  restrictions, and restrictive class/interface/function/pointer deletion
+  behavior in the command-level executor test.
+- [x] Add raw-format assertions for schema table counts, offsets, lengths,
+  names, and stable IDs after schema mutations
+  (`schema_mutations.c`).
 
 ### Functions
 
@@ -39,8 +41,8 @@ with the README.
 - [x] Test a pointer type descriptor in a function parameter
   (`create_function_pointer.c`).
 - [x] Exercise `DROP FUNCTION` after creating and calling a typed function.
-- [ ] Add raw-format assertions that `DROP FUNCTION` updates the function
-  table count, range, and retained entries.
+- [x] Add raw-format assertions that `DROP FUNCTION` updates the function
+  table count, range, and retained entries (`create_function.c`).
 
 ### Objects
 
@@ -54,8 +56,9 @@ with the README.
 
 ### Metadata commands
 
-- [ ] Update `list_classes.c` and `list_interfaces.c` to use metadata tables
-  instead of page-directory helpers.
+- [x] Use README-format databases in `list_classes.c` and
+  `list_interfaces.c` to exercise metadata-table enumeration, including empty,
+  populated, and reopened databases.
 - [x] Exercise `DESCRIBE` against the class definition and inherited fields.
 
 ## Test boundaries

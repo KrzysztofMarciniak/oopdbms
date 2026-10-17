@@ -70,6 +70,43 @@ static uint8_t* _read_file(size_t* file_size) {
         return bytes;
 }
 
+static uint32_t _find_function_id(const uint8_t* bytes, size_t file_size,
+                                  const char* expected_name) {
+        uint64_t table_offset;
+        uint16_t count;
+        size_t index;
+
+        if (file_size < 64) {
+                return 0;
+        }
+        count        = _u16(bytes + 12);
+        table_offset = _u64(bytes + 48);
+        if (!_range(file_size, table_offset,
+                    (uint64_t)count * FUNCTION_ENTRY_SIZE)) {
+                return 0;
+        }
+        for (index = 0; index < count; index++) {
+                const uint8_t* entry =
+                    bytes + table_offset + index * FUNCTION_ENTRY_SIZE;
+                uint64_t definition_offset = _u64(entry + 8);
+                uint32_t definition_length = _u32(entry + 16);
+                uint16_t name_length;
+
+                if (definition_length < 9 ||
+                    !_range(file_size, definition_offset, definition_length)) {
+                        continue;
+                }
+                name_length = _u16(bytes + definition_offset);
+                if (name_length <= definition_length - 9 &&
+                    name_length == strlen(expected_name) &&
+                    memcmp(bytes + definition_offset + 9, expected_name,
+                           name_length) == 0) {
+                        return _u32(entry);
+                }
+        }
+        return 0;
+}
+
 static void _test_create_function_bytes(void) {
         struct database db;
         struct analyzer_field class_fields[] = {
@@ -109,11 +146,19 @@ static void _test_create_function_bytes(void) {
         uint32_t owner_class_id;
         uint64_t definition_offset;
         uint32_t definition_length;
+        struct analyzer_statement drop_statement = {
+            .kind     = ANALYZER_DROP_FUNCTION,
+            .group    = ANALYZER_GROUP_FUNCTION,
+            .name     = "Employee",
+            .function = "raise",
+        };
+        struct analyzer_statement second_function_statement;
         size_t offset;
         size_t definition_end;
         uint16_t name_length;
         uint16_t parameter_name_length;
         uint32_t expression_length;
+        uint32_t retained_function_id;
 
         remove(TEST_FILE);
         CHECK(database_init_format(&db, TEST_FILE, true),
@@ -225,6 +270,57 @@ static void _test_create_function_bytes(void) {
               "function definition ends after its expression");
 
         free(bytes);
+
+        CHECK(database_init_format(&db, TEST_FILE, false),
+              "reopen database before creating a retained function");
+        second_function_statement          = function_statement;
+        second_function_statement.function = "bonus";
+        CHECK(i_execute(&db, &second_function_statement) == EXECUTOR_OK,
+              "create a second function before dropping the first");
+        database_close(&db);
+
+        bytes = _read_file(&file_size);
+        CHECK(bytes != NULL, "read function table before DROP FUNCTION");
+        retained_function_id = 0;
+        if (bytes != NULL) {
+                uint64_t table_offset = _u64(bytes + 48);
+                uint64_t table_length = _u64(bytes + 56);
+
+                CHECK(_u16(bytes + 12) == 2 &&
+                          table_length == 2 * FUNCTION_ENTRY_SIZE,
+                      "two functions occupy two table entries");
+                CHECK(_range(file_size, table_offset, table_length),
+                      "two-entry function table fits in the file");
+                retained_function_id =
+                    _find_function_id(bytes, file_size, "bonus");
+                CHECK(retained_function_id != 0 &&
+                          retained_function_id != function_id,
+                      "the retained function has a distinct stable ID");
+                free(bytes);
+        }
+
+        CHECK(database_init_format(&db, TEST_FILE, false),
+              "open database for DROP FUNCTION");
+        CHECK(i_execute(&db, &drop_statement) == EXECUTOR_OK,
+              "DROP FUNCTION succeeds");
+        database_close(&db);
+
+        bytes = _read_file(&file_size);
+        CHECK(bytes != NULL, "read database bytes after DROP FUNCTION");
+        if (bytes != NULL) {
+                uint64_t table_offset = _u64(bytes + 48);
+                uint64_t table_length = _u64(bytes + 56);
+
+                CHECK(_u16(bytes + 12) == 1 &&
+                          table_length == FUNCTION_ENTRY_SIZE,
+                      "header and metatable retain one function table entry");
+                CHECK(_range(file_size, table_offset, table_length),
+                      "retained function table range fits in the file");
+                CHECK(_find_function_id(bytes, file_size, "bonus") ==
+                          retained_function_id,
+                      "DROP FUNCTION preserves the retained function ID");
+                free(bytes);
+        }
         remove(TEST_FILE);
 }
 

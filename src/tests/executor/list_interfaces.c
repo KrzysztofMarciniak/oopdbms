@@ -1,6 +1,6 @@
 /**
  * @file list_interfaces.c
- * @brief Tests LIST INTERFACES and interface-directory enumeration.
+ * @brief Tests LIST INTERFACES and interface metadata-table enumeration.
  */
 
 #include <stdio.h>

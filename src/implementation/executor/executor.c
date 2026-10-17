@@ -1082,7 +1082,8 @@ static bool _descendant_defines_field(struct executor_format_file* file,
         for (i = 0; i < file->header.class_count; i++) {
                 struct executor_format_class_entry candidate;
                 uint32_t cursor;
-                size_t depth = 0;
+                size_t depth       = 0;
+                bool is_descendant = false;
 
                 if (!executor_format_file_read_class_entry(file, i,
                                                            &candidate)) {
@@ -1096,28 +1097,15 @@ static bool _descendant_defines_field(struct executor_format_file* file,
                         struct executor_format_class_entry current;
                         struct executor_class_view view;
                         uint32_t parent_id;
-                        size_t field_index;
-                        bool is_target = cursor == class_id;
 
                         if (!_class_entry_by_id(file, cursor, &current) ||
                             !_load_class_view(file, &current, &view)) {
                                 return true;
                         }
                         parent_id = view.parent_class_id;
-                        if (is_target) {
-                                for (field_index = 0;
-                                     field_index < view.field_count;
-                                     field_index++) {
-                                        if (_field_name_equal(
-                                                &view.fields[field_index],
-                                                name)) {
-                                                _class_view_free(&view);
-                                                return true;
-                                        }
-                                }
-                        }
                         _class_view_free(&view);
-                        if (is_target) {
+                        if (parent_id == class_id) {
+                                is_descendant = true;
                                 break;
                         }
                         cursor = parent_id;
@@ -1125,6 +1113,23 @@ static bool _descendant_defines_field(struct executor_format_file* file,
                 if (cursor != 0 &&
                     depth > (size_t)file->header.class_count + 1) {
                         return true;
+                }
+                if (is_descendant) {
+                        struct executor_class_view view;
+                        size_t field_index;
+
+                        if (!_load_class_view(file, &candidate, &view)) {
+                                return true;
+                        }
+                        for (field_index = 0; field_index < view.field_count;
+                             field_index++) {
+                                if (_field_name_equal(&view.fields[field_index],
+                                                      name)) {
+                                        _class_view_free(&view);
+                                        return true;
+                                }
+                        }
+                        _class_view_free(&view);
                 }
         }
         return false;

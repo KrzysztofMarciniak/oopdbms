@@ -1,6 +1,6 @@
 /**
  * @file list_classes.c
- * @brief Tests LIST CLASSES and class-directory enumeration.
+ * @brief Tests LIST CLASSES and class metadata-table enumeration.
  */
 
 #include <stdio.h>

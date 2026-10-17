@@ -238,6 +238,104 @@ static void _schema_and_function_commands(struct database* db) {
               "DROP INTERFACE succeeds after implementations are removed");
 }
 
+static void _schema_constraints(struct database* db) {
+        struct analyzer_field parent_fields[] = {
+            {.name = "value", .type = {.kind = ANALYZER_TYPE_INTEGER}},
+        };
+        struct analyzer_field child_fields[] = {
+            {.name = "label", .type = {.kind = ANALYZER_TYPE_TEXT}},
+        };
+        struct analyzer_assignment assignments[] = {
+            {.field = "value",
+             .value = {.kind = ANALYZER_VALUE_INTEGER, .text = "1"}},
+            {.field = "label",
+             .value = {.kind = ANALYZER_VALUE_TEXT, .text = "child"}},
+        };
+        struct analyzer_statement statement = {0};
+
+        statement.fields.items    = parent_fields;
+        statement.fields.count    = 1;
+        statement.fields.capacity = 1;
+        CHECK(_execute(db, ANALYZER_CREATE_CLASS, ANALYZER_GROUP_SCHEMA,
+                       "Parent", &statement) == EXECUTOR_OK,
+              "create parent for schema constraint tests");
+
+        statement                 = (struct analyzer_statement){0};
+        statement.parent          = "Parent";
+        statement.fields.items    = child_fields;
+        statement.fields.count    = 1;
+        statement.fields.capacity = 1;
+        CHECK(_execute(db, ANALYZER_CREATE_CLASS, ANALYZER_GROUP_SCHEMA,
+                       "Child", &statement) == EXECUTOR_OK,
+              "create child with a separately declared field");
+
+        statement                      = (struct analyzer_statement){0};
+        statement.assignments.items    = assignments;
+        statement.assignments.count    = 2;
+        statement.assignments.capacity = 2;
+        CHECK(_execute(db, ANALYZER_NEW, ANALYZER_GROUP_OBJECT, "Child",
+                       &statement) == EXECUTOR_OK,
+              "store an object in the descendant class");
+
+        statement              = (struct analyzer_statement){0};
+        statement.fields.items = (struct analyzer_field[]){
+            {.name = "extra", .type = {.kind = ANALYZER_TYPE_TEXT}},
+        };
+        statement.fields.count    = 1;
+        statement.fields.capacity = 1;
+        CHECK(
+            _execute(db, ANALYZER_ALTER_CLASS_ADD_FIELD, ANALYZER_GROUP_SCHEMA,
+                     "Parent", &statement) == EXECUTOR_ERROR_BAD_STATEMENT,
+            "field changes are rejected while a descendant has objects");
+
+        statement = (struct analyzer_statement){0};
+        CHECK(_execute(db, ANALYZER_DROP_CLASS, ANALYZER_GROUP_SCHEMA, "Parent",
+                       &statement) == EXECUTOR_ERROR_BAD_STATEMENT,
+              "DROP CLASS rejects a class with a subclass");
+        CHECK(_execute(db, ANALYZER_DROP_CLASS, ANALYZER_GROUP_SCHEMA, "Child",
+                       &statement) == EXECUTOR_ERROR_BAD_STATEMENT,
+              "DROP CLASS rejects a class that still has objects");
+        CHECK(i_execute(db,
+                        &(struct analyzer_statement){
+                            .kind  = ANALYZER_DELETE,
+                            .group = ANALYZER_GROUP_OBJECT,
+                            .name  = "Child",
+                            .id    = "1",
+                        }) == EXECUTOR_OK,
+              "DELETE removes the descendant object");
+        statement              = (struct analyzer_statement){0};
+        statement.fields.items = (struct analyzer_field[]){
+            {.name = "label", .type = {.kind = ANALYZER_TYPE_TEXT}},
+        };
+        statement.fields.count    = 1;
+        statement.fields.capacity = 1;
+        CHECK(
+            _execute(db, ANALYZER_ALTER_CLASS_ADD_FIELD, ANALYZER_GROUP_SCHEMA,
+                     "Parent", &statement) == EXECUTOR_ERROR_BAD_STATEMENT,
+            "adding a field declared by a descendant is rejected");
+        statement          = (struct analyzer_statement){0};
+        statement.field    = "value";
+        statement.new_name = "label";
+        CHECK(_execute(db, ANALYZER_ALTER_CLASS_RENAME_FIELD,
+                       ANALYZER_GROUP_SCHEMA, "Parent",
+                       &statement) == EXECUTOR_ERROR_BAD_STATEMENT,
+              "renaming a field to a descendant field name is rejected");
+        CHECK(i_execute(db,
+                        &(struct analyzer_statement){
+                            .kind  = ANALYZER_DROP_CLASS,
+                            .group = ANALYZER_GROUP_SCHEMA,
+                            .name  = "Child",
+                        }) == EXECUTOR_OK,
+              "DROP CLASS succeeds after deleting the descendant object");
+        CHECK(i_execute(db,
+                        &(struct analyzer_statement){
+                            .kind  = ANALYZER_DROP_CLASS,
+                            .group = ANALYZER_GROUP_SCHEMA,
+                            .name  = "Parent",
+                        }) == EXECUTOR_OK,
+              "DROP CLASS succeeds after removing its subclass");
+}
+
 static void _object_and_function_commands(struct database* db) {
         struct analyzer_field target_fields[] = {
             {.name = "label", .type = {.kind = ANALYZER_TYPE_TEXT}},
@@ -468,6 +566,13 @@ static void _object_and_function_commands(struct database* db) {
                             .id    = "1",
                         }) == EXECUTOR_OK,
               "DELETE succeeds after pointer owner is removed");
+        CHECK(i_execute(db,
+                        &(struct analyzer_statement){
+                            .kind  = ANALYZER_DROP_CLASS,
+                            .group = ANALYZER_GROUP_SCHEMA,
+                            .name  = "Target",
+                        }) == EXECUTOR_ERROR_BAD_STATEMENT,
+              "DROP CLASS rejects a target used by a pointer field");
         bytes = _read_file(&file_size);
         CHECK(bytes != NULL, "read database after object deletions");
         if (bytes != NULL) {
@@ -488,6 +593,13 @@ static void _object_and_function_commands(struct database* db) {
                 }
                 free(bytes);
         }
+        CHECK(i_execute(db,
+                        &(struct analyzer_statement){
+                            .kind  = ANALYZER_DROP_CLASS,
+                            .group = ANALYZER_GROUP_SCHEMA,
+                            .name  = "Item",
+                        }) == EXECUTOR_ERROR_BAD_STATEMENT,
+              "DROP CLASS rejects a class that still owns a function");
         CHECK(i_execute(db,
                         &(struct analyzer_statement){
                             .kind     = ANALYZER_DROP_FUNCTION,
@@ -524,6 +636,7 @@ int main(void) {
         CHECK(database_init_format(&db, TEST_FILE, true),
               "initialize README-format executor test database");
         _schema_and_function_commands(&db);
+        _schema_constraints(&db);
         _object_and_function_commands(&db);
         database_close(&db);
         CHECK(database_init_format_mode(&db, TEST_FILE, false, true),
