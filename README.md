@@ -139,7 +139,8 @@ A statement passes through these steps. If a step fails, it prints an error to s
 1. tokenizer    argv -> tokens
 2. analyzer     tokens -> checked statement (syntax only)
 3. file check   verify that the database file can be used
-4. execute      execute the statement (not implemented yet)
+4. execute      execute the statement (supported commands are tracked in
+                src/implementation/executor/README.md)
 ```
 
 Each step has an interface under `src/interface/<step>/`, an implementation under `src/implementation/<step>/`, and error definitions/printing under `src/error/<step>/`.

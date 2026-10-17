@@ -17,6 +17,8 @@
 struct dir_entry {
         /** Name of the schema element */
         const char* name;
+        /** Name length in bytes; the name is not NUL-terminated */
+        uint16_t name_length;
         /** Page where definition blob lives */
         uint32_t loc_page;
         /** Offset within the page */
@@ -24,6 +26,10 @@ struct dir_entry {
         /** Length of definition blob */
         uint16_t loc_len;
 };
+
+/** Visit callback for one directory entry; entry data is borrowed. */
+typedef void (*db_dir_visit_callback)(const struct dir_entry* entry,
+                                      void* context);
 
 /**
  * @brief Create a new directory page chain
@@ -43,6 +49,17 @@ bool db_dir_ensure_chain(struct database* db, uint32_t* first_page_out);
  */
 bool db_dir_find(struct database* db, int kind, const char* name,
                  struct dir_entry* entry);
+
+/**
+ * @brief Visit every entry in a directory page chain.
+ * @param db Database handle
+ * @param kind Directory kind (CLASS_DIR, IFACE_DIR, FUNC_DIR)
+ * @param callback Function called once for each entry
+ * @param context Caller-provided callback context
+ * @return true on success, false if the directory cannot be read or is invalid
+ */
+bool db_dir_visit(struct database* db, int kind, db_dir_visit_callback callback,
+                  void* context);
 
 /**
  * @brief Put a directory entry into a specific directory

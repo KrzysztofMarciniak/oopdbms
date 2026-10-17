@@ -18,6 +18,8 @@ enum EXECUTOR_RESULT {
         EXECUTOR_ERROR_BAD_STATEMENT,
         /** The command is routed but its code is not written yet. */
         EXECUTOR_ERROR_NOT_IMPLEMENTED,
+        /** The command could not read required database metadata. */
+        EXECUTOR_ERROR_STORAGE_FAILED,
         /** The statement ran but the changes could not be saved. */
         EXECUTOR_ERROR_SAVE_FAILED
 };

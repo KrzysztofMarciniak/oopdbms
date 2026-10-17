@@ -51,9 +51,10 @@ static bool dir_entry_at(const uint8_t* page, uint16_t free_off,
         if (entry != NULL) {
                 entry->name =
                     (const char*)(page + offset + DIR_ENTRY_FIXED_SIZE);
-                entry->loc_page = get_u32_le(page + offset + 2);
-                entry->loc_off  = get_u16_le(page + offset + 6);
-                entry->loc_len  = get_u16_le(page + offset + 8);
+                entry->name_length = name_len;
+                entry->loc_page    = get_u32_le(page + offset + 2);
+                entry->loc_off     = get_u16_le(page + offset + 6);
+                entry->loc_len     = get_u16_le(page + offset + 8);
         }
         if (next_offset != NULL) {
                 *next_offset = (uint16_t)(offset + entry_len);
@@ -170,6 +171,52 @@ bool db_dir_find(struct database* db, int kind, const char* name,
         }
 
         return false;
+}
+
+bool db_dir_visit(struct database* db, int kind, db_dir_visit_callback callback,
+                  void* context) {
+        uint32_t page_no;
+        uint32_t pages_visited = 0;
+        uint8_t page[DB_PAGE_SIZE];
+
+        if (db == NULL || callback == NULL ||
+            !db_dir_get_first_page(db, kind, &page_no)) {
+                return false;
+        }
+
+        while (page_no != 0) {
+                uint16_t count;
+                uint16_t free_off;
+                uint16_t offset = DIR_PAGE_HDR_SIZE;
+                size_t i;
+
+                if (pages_visited >= db->hdr.total_pages ||
+                    !db_read_page(db, page_no, page)) {
+                        return false;
+                }
+                pages_visited++;
+
+                count    = get_u16_le(page + DIR_PAGE_COUNT_OFF);
+                free_off = get_u16_le(page + DIR_PAGE_FREE_OFF_OFF);
+                if (free_off < DIR_PAGE_HDR_SIZE || free_off > DB_PAGE_SIZE) {
+                        return false;
+                }
+
+                for (i = 0; i < count; ++i) {
+                        struct dir_entry entry;
+                        uint16_t next_offset;
+
+                        if (!dir_entry_at(page, free_off, offset, &next_offset,
+                                          &entry)) {
+                                return false;
+                        }
+                        callback(&entry, context);
+                        offset = next_offset;
+                }
+                page_no = get_u32_le(page + DIR_PAGE_NEXT_OFF);
+        }
+
+        return true;
 }
 
 bool db_dir_put(struct database* db, int kind, const char* name,

@@ -51,6 +51,12 @@ void executor_error_print(enum EXECUTOR_RESULT result,
                         fprintf(stderr, "executor: %s is not implemented yet\n",
                                 _name_of(kind));
                         break;
+                case EXECUTOR_ERROR_STORAGE_FAILED:
+                        fprintf(stderr,
+                                "executor: %s failed while reading database "
+                                "metadata\n",
+                                _name_of(kind));
+                        break;
                 case EXECUTOR_ERROR_SAVE_FAILED:
                         fprintf(stderr,
                                 "executor: %s ran but saving the database "
