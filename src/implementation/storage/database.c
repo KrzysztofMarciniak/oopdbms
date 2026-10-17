@@ -3,6 +3,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "implementation/executor/helper/binary_encoding.h"
+#include "implementation/executor/helper/create_header.h"
+#include "implementation/executor/helper/create_metatable.h"
+#include "implementation/executor/helper/format_types.h"
+#include "implementation/executor/helper/validate_metadata_layout.h"
 #include "interface/storage/directory.h"
 
 #define DIR_ENTRY_FIXED_SIZE 10U
@@ -468,11 +473,12 @@ static void bytes_to_header(const uint8_t* b, struct db_header* h) {
 }
 
 void database_init(struct database* db, const char* path, bool created) {
-        db->path      = path;
-        db->created   = created;
-        db->modified  = false;
-        db->read_only = false;
-        db->fp        = NULL;
+        db->path        = path;
+        db->created     = created;
+        db->modified    = false;
+        db->read_only   = false;
+        db->format_mode = false;
+        db->fp          = NULL;
         memset(&db->hdr, 0, sizeof db->hdr);
         if (created) {
                 db->fp = fopen(path, "w+b");
@@ -494,6 +500,68 @@ void database_init(struct database* db, const char* path, bool created) {
         }
 }
 
+bool database_init_format_mode(struct database* db, const char* path,
+                               bool created, bool read_only) {
+        uint8_t header_bytes[EXECUTOR_FORMAT_HEADER_SIZE];
+        uint8_t metatable_bytes[EXECUTOR_FORMAT_METATABLE_SIZE];
+        struct executor_format_header header       = {0};
+        struct executor_format_metatable metatable = {0};
+        long file_size;
+
+        if (db == NULL || path == NULL || (created && read_only)) {
+                return false;
+        }
+        memset(db, 0, sizeof *db);
+        db->path    = path;
+        db->created = created;
+        db->fp      = fopen(path, created ? "w+b" : read_only ? "rb" : "r+b");
+        if (db->fp == NULL) {
+                return false;
+        }
+        db->format_mode = true;
+        db->read_only   = read_only;
+
+        if (created) {
+                if (!executor_helper_create_header(
+                        header_bytes, sizeof header_bytes, &header) ||
+                    !executor_helper_create_metatable(
+                        metatable_bytes, sizeof metatable_bytes, &metatable) ||
+                    fwrite(header_bytes, 1, sizeof header_bytes, db->fp) !=
+                        sizeof header_bytes ||
+                    fwrite(metatable_bytes, 1, sizeof metatable_bytes,
+                           db->fp) != sizeof metatable_bytes ||
+                    fflush(db->fp) != 0) {
+                        database_close(db);
+                        return false;
+                }
+                return true;
+        }
+
+        if (fseek(db->fp, 0, SEEK_END) != 0 ||
+            (file_size = ftell(db->fp)) < 0 ||
+            (uintmax_t)file_size > (uintmax_t)SIZE_MAX ||
+            file_size < (long)(sizeof header_bytes + sizeof metatable_bytes) ||
+            fseek(db->fp, 0, SEEK_SET) != 0 ||
+            fread(header_bytes, 1, sizeof header_bytes, db->fp) !=
+                sizeof header_bytes ||
+            fread(metatable_bytes, 1, sizeof metatable_bytes, db->fp) !=
+                sizeof metatable_bytes ||
+            !executor_helper_read_header(header_bytes, sizeof header_bytes,
+                                         &header) ||
+            !executor_helper_read_metatable(
+                metatable_bytes, sizeof metatable_bytes, &metatable) ||
+            !executor_helper_validate_metadata_layout((size_t)file_size,
+                                                      &header, &metatable)) {
+                database_close(db);
+                return false;
+        }
+        return true;
+}
+
+bool database_init_format(struct database* db, const char* path, bool created) {
+        return database_init_format_mode(db, path, created, false);
+}
+
 void database_close(struct database* db) {
         if (db->fp) {
                 if (db->modified) database_save(db);
@@ -508,6 +576,13 @@ bool database_is_modified(const struct database* db) { return db->modified; }
 
 bool database_save(struct database* db) {
         if (!db->fp) return false;
+        if (db->format_mode) {
+                if (fflush(db->fp) != 0) {
+                        return false;
+                }
+                db->modified = false;
+                return true;
+        }
         if (!db_flush_header(db)) return false;
         fflush(db->fp);
         db->modified = false;

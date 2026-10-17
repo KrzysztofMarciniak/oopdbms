@@ -216,7 +216,11 @@ The default path is `database.oopdb` in the current directory. Set `OOPDB` to us
 OOPDB=/srv/books.oopdb oopdbms FIND Book
 ```
 
-The file check validates the database magic and header. Errors include a missing file, failure to open/read/create a file (including the operating-system reason), a file that is too short, and an incorrect magic value.
+The file check validates the database magic, header, metatable, and metadata
+table ranges, including their lengths, file bounds, and overlap. Errors include
+a missing file, failure to open/read/create a file (including the operating
+system reason), a file that is too short, an incorrect magic value, and an
+invalid database layout.
 
 ## Source layout
 

@@ -1,5 +1,7 @@
 #include "error/analyzer/main.h"
 
+#include <stdio.h>
+
 #include "error/executor/executor_error.h"
 #include "error/file-check/main.h"
 #include "error/tokenizer/main.h"
@@ -9,6 +11,12 @@
 #include "interface/help/main.h"
 #include "interface/storage/database.h"
 #include "interface/tokenizer/main.h"
+
+static bool _statement_is_read_only(enum ANALYZER_STATEMENT kind) {
+        return kind == ANALYZER_FIND || kind == ANALYZER_LIST_CLASSES ||
+               kind == ANALYZER_LIST_INTERFACES || kind == ANALYZER_DESCRIBE ||
+               kind == ANALYZER_CALL;
+}
 
 int main(int argc, char** argv) {
         struct tokenizer_error tokenizer_error;
@@ -53,8 +61,15 @@ int main(int argc, char** argv) {
         }
 
         // 4.  execute
-        database_init(&database, path, file_state == FILE_CHECK_STATE_CREATED);
+        if (!database_init_format_mode(
+                &database, path, file_state == FILE_CHECK_STATE_CREATED,
+                _statement_is_read_only(statement.kind))) {
+                fprintf(stderr, "executor: cannot open database file\n");
+                i_analyzer_free(&statement);
+                return 1;
+        }
         executed = i_execute(&database, &statement);
+        database_close(&database);
         if (executed != EXECUTOR_OK) {
                 executor_error_print(executed, statement.kind);
                 i_analyzer_free(&statement);

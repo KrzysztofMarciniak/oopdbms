@@ -3,7 +3,7 @@
 
 /**
  * @file database.h
- * @brief The database handle the executor works on (page-based v2).
+ * @brief Open database handle with README-format and legacy page APIs.
  */
 
 #include <stdbool.h>
@@ -23,8 +23,7 @@ uint16_t get_u16_le(const uint8_t* p);
 uint32_t get_u32_le(const uint8_t* p);
 
 /**
- * @brief Cached database header (Page 0, v2), all values in host order after
- * load.
+ * @brief Cached legacy page-format header (all values in host order).
  */
 struct db_header {
         uint32_t version;
@@ -53,9 +52,11 @@ struct database {
         bool modified;
         /** True if opened read-only (defensive). */
         bool read_only;
+        /** True when opened using the README-defined offset-based format. */
+        bool format_mode;
         /** Open file handle (r+b or w+b). Owned by this handle while open. */
         FILE* fp;
-        /** Cached header loaded from/written to page 0. */
+        /** Cached legacy page-format header. */
         struct db_header hdr;
         /** Scratch page buffer for I/O (size DB_PAGE_SIZE). */
         uint8_t page_buf[DB_PAGE_SIZE];
@@ -63,6 +64,11 @@ struct database {
 
 /* Lifecycle */
 void database_init(struct database* db, const char* path, bool created);
+/** @brief Open a database using the README-defined offset-based format. */
+bool database_init_format(struct database* db, const char* path, bool created);
+/** @brief Open a format database, selecting read-only access when requested. */
+bool database_init_format_mode(struct database* db, const char* path,
+                               bool created, bool read_only);
 void database_close(struct database* db);
 void database_mark_modified(struct database* db);
 bool database_is_modified(const struct database* db);

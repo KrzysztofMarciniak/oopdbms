@@ -9,9 +9,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "implementation/executor/helper/create_header.h"
+#include "implementation/executor/helper/create_metatable.h"
+#include "implementation/executor/helper/format_types.h"
 #include "interface/storage/header.h"
 
 #define TEST_FILE "build/file-check-test.oopdb"
+#define FORMAT_FILE_SIZE \
+        (EXECUTOR_FORMAT_HEADER_SIZE + EXECUTOR_FORMAT_METATABLE_SIZE)
 
 static int checks   = 0;
 static int failures = 0;
@@ -41,13 +46,20 @@ static void _write_file(const unsigned char* bytes, size_t count) {
 
 /** Write a header with the given version. */
 static void _write_header(const char* magic, unsigned long version) {
-        unsigned char bytes[STORAGE_HEADER_SIZE] = {0};
+        uint8_t bytes[FORMAT_FILE_SIZE]                   = {0};
+        uint8_t metatable[EXECUTOR_FORMAT_METATABLE_SIZE] = {0};
+        struct executor_format_header header              = {0};
+        struct executor_format_metatable tables           = {0};
 
+        if (version != STORAGE_VERSION) {
+                header.class_count = 1;
+        }
+        executor_helper_create_header(bytes, EXECUTOR_FORMAT_HEADER_SIZE,
+                                      &header);
+        executor_helper_create_metatable(metatable, sizeof metatable, &tables);
+        memcpy(bytes + EXECUTOR_FORMAT_HEADER_SIZE, metatable,
+               sizeof metatable);
         memcpy(bytes, magic, STORAGE_MAGIC_SIZE);
-        bytes[8]  = (unsigned char)(version & 0xff);
-        bytes[9]  = (unsigned char)((version >> 8) & 0xff);
-        bytes[10] = (unsigned char)((version >> 16) & 0xff);
-        bytes[11] = (unsigned char)((version >> 24) & 0xff);
         _write_file(bytes, sizeof bytes);
 }
 
@@ -99,7 +111,7 @@ static void _test_missing(void) {
                 CHECK(!_exists(), "missing: reading statement creates nothing");
         }
         for (i = 0; i < sizeof writing / sizeof writing[0]; i++) {
-                unsigned char bytes[STORAGE_HEADER_SIZE] = {0};
+                unsigned char bytes[FORMAT_FILE_SIZE] = {0};
                 FILE* file;
                 size_t got = 0;
 
@@ -109,15 +121,15 @@ static void _test_missing(void) {
                 file = fopen(TEST_FILE, "rb");
                 if (file != NULL) {
                         got = fread(bytes, 1, sizeof bytes, file);
-                        CHECK(fgetc(file) == EOF, "created: header only");
+                        CHECK(fgetc(file) == EOF, "created: fixed header only");
                         fclose(file);
                 }
                 CHECK(
-                    got == STORAGE_HEADER_SIZE &&
+                    got == FORMAT_FILE_SIZE &&
                         memcmp(bytes, STORAGE_MAGIC, STORAGE_MAGIC_SIZE) == 0 &&
-                        bytes[8] == STORAGE_VERSION && bytes[9] == 0 &&
-                        bytes[10] == 0 && bytes[11] == 0,
-                    "created: magic and version");
+                        bytes[8] == 0 && bytes[9] == 0 && bytes[10] == 0 &&
+                        bytes[11] == 0 && bytes[14] == 0 && bytes[15] == 0,
+                    "created: README magic, counts, and reserved field");
                 _expect(TEST_FILE, writing[i], FILE_CHECK_STATE_READY,
                         FILE_CHECK_OK, "created: second check is ready");
         }
@@ -155,16 +167,15 @@ static void _test_broken(void) {
                 FILE_CHECK_ERROR_BAD_MAGIC, "broken: almost the magic");
         _write_header(STORAGE_MAGIC, STORAGE_VERSION + 1);
         _expect(TEST_FILE, ANALYZER_FIND, FILE_CHECK_STATE_FAILED,
-                FILE_CHECK_ERROR_BAD_VERSION, "broken: newer version");
+                FILE_CHECK_ERROR_BAD_LAYOUT, "broken: inconsistent counts");
 
         (void)i_file_check(TEST_FILE, &statement, &error);
-        CHECK(error.version == STORAGE_VERSION + 1,
-              "broken: version is reported");
+        CHECK(error.type == FILE_CHECK_ERROR_BAD_LAYOUT,
+              "broken: invalid metadata layout is reported");
         _write_header(STORAGE_MAGIC, 0x01000001ul);
         (void)i_file_check(TEST_FILE, &statement, &error);
-        CHECK(error.type == FILE_CHECK_ERROR_BAD_VERSION &&
-                  error.version == 0x01000001ul,
-              "broken: version is read as little-endian u32");
+        CHECK(error.type == FILE_CHECK_ERROR_BAD_LAYOUT,
+              "broken: malformed count fields are rejected");
 }
 
 static void _test_io(void) {

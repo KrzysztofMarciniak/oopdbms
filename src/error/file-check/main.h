@@ -21,7 +21,9 @@ enum file_check_error_type {
         /** The file does not start with the oopdb magic. */
         FILE_CHECK_ERROR_BAD_MAGIC,
         /** The file has a format version this build does not read. */
-        FILE_CHECK_ERROR_BAD_VERSION
+        FILE_CHECK_ERROR_BAD_VERSION,
+        /** The header, tables, or metadata ranges do not match the format. */
+        FILE_CHECK_ERROR_BAD_LAYOUT
 };
 
 /**

@@ -36,6 +36,11 @@ void file_check_error_print(struct file_check_error fe) {
                                 "build reads version %lu\n",
                                 fe.path, fe.version, STORAGE_VERSION);
                         break;
+                case FILE_CHECK_ERROR_BAD_LAYOUT:
+                        fprintf(stderr,
+                                "file check: %s has invalid database layout\n",
+                                fe.path);
+                        break;
                 default:
                         puts("Unknown file check error");
                         break;
