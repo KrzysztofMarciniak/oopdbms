@@ -8,12 +8,6 @@
 #include "interface/storage/database.h"
 #include "interface/tokenizer/main.h"
 
-static bool _statement_is_read_only(enum ANALYZER_STATEMENT kind) {
-        return kind == ANALYZER_FIND || kind == ANALYZER_LIST_CLASSES ||
-               kind == ANALYZER_LIST_INTERFACES || kind == ANALYZER_DESCRIBE ||
-               kind == ANALYZER_CALL;
-}
-
 int main(int argc, char** argv) {
         struct tokenizer_error tokenizer_error;
         struct tokenizer_tokens tokens;
@@ -53,7 +47,7 @@ int main(int argc, char** argv) {
 
         if (!database_init_format_mode(
                 &database, path, file_state == FILE_CHECK_STATE_CREATED,
-                _statement_is_read_only(statement.kind))) {
+                i_file_check_statement_is_read_only(statement.kind))) {
                 fprintf(stderr, "executor: cannot open database file\n");
                 i_analyzer_free(&statement);
                 return 1;

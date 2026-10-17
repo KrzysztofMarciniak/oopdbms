@@ -1,6 +1,8 @@
 #ifndef INTERFACE_FILE_CHECK_MAIN_H
 #define INTERFACE_FILE_CHECK_MAIN_H
 
+#include <stdbool.h>
+
 /**
  * @file main.h
  * @brief File check interface, step 3 between analyzer and execution.
@@ -28,6 +30,14 @@ enum FILE_CHECK_STATE {
  *         STORAGE_DEFAULT_PATH otherwise.
  */
 const char* i_file_check_path(void);
+
+/**
+ * @brief Whether a statement only reads the database.
+ *
+ * @param kind Statement kind.
+ * @return True for commands that require read-only access.
+ */
+bool i_file_check_statement_is_read_only(enum ANALYZER_STATEMENT kind);
 
 /**
  * @brief Check that the database file can run the statement.

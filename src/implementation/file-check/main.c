@@ -21,8 +21,7 @@
 #define FILE_FIXED_SIZE \
         (EXECUTOR_FORMAT_HEADER_SIZE + EXECUTOR_FORMAT_METATABLE_SIZE)
 
-/** Statements that never write to the file. */
-static bool _is_read_only(enum ANALYZER_STATEMENT kind) {
+bool i_file_check_statement_is_read_only(enum ANALYZER_STATEMENT kind) {
         return kind == ANALYZER_FIND || kind == ANALYZER_LIST_CLASSES ||
                kind == ANALYZER_LIST_INTERFACES || kind == ANALYZER_DESCRIBE ||
                kind == ANALYZER_CALL;
@@ -94,12 +93,15 @@ enum FILE_CHECK_STATE i_file_check(const char* path,
         error->path = path;
         _fail(error, FILE_CHECK_OK, 0, 0);
 
-        file = fopen(path, _is_read_only(statement->kind) ? "rb" : "r+b");
+        file = fopen(path, i_file_check_statement_is_read_only(statement->kind)
+                               ? "rb"
+                               : "r+b");
         if (file == NULL) {
                 saved = errno;
                 if (saved != ENOENT) {
                         _fail(error, FILE_CHECK_ERROR_IO, saved, 0);
-                } else if (_is_read_only(statement->kind)) {
+                } else if (i_file_check_statement_is_read_only(
+                               statement->kind)) {
                         _fail(error, FILE_CHECK_ERROR_NOT_FOUND, 0, 0);
                 } else if (_create(path, error)) {
                         return FILE_CHECK_STATE_CREATED;
