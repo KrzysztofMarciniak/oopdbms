@@ -29,6 +29,19 @@ typedef struct helper_class_definition {
         uint32_t* interface_ids;
 } helper_class_definition;
 
+typedef struct helper_class_page_field {
+        const char* type_name;
+        const char* name;
+} helper_class_page_field;
+
+typedef struct helper_class_page_definition {
+        uint16_t field_count;
+        const helper_class_page_field* fields;
+        const char* parent_name;
+        uint16_t interface_count;
+        const char* const* interfaces;
+} helper_class_page_definition;
+
 /*
  * Serialize a class definition at the current file position.
  *
@@ -48,6 +61,23 @@ typedef struct helper_class_definition {
  */
 int helper_write_class_definition(FILE* file,
                                   const helper_class_definition* definition);
+
+/*
+ * Serialize the page-based v2 class definition.
+ *
+ * Layout:
+ *   u16 field_count
+ *   repeated: u16 type_length, type bytes, u16 name_length, name bytes
+ *   u16 parent_name_length, parent name bytes (empty when there is no parent)
+ *   u16 interface_count
+ *   repeated: u16 interface_name_length, interface name bytes
+ *
+ * The class name belongs to the page directory entry, not this blob.
+ * Returns 0 on success, -1 on invalid data or insufficient buffer space.
+ */
+int helper_write_class_page_definition(
+    uint8_t* buffer, size_t buffer_size,
+    const helper_class_page_definition* definition, uint16_t* written);
 
 /*
  * Deserialize a class definition from the current file position.

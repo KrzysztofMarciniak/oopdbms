@@ -4,136 +4,149 @@
  * (<field> <type>[, ...])
  */
 
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "implementation/executor/executor_internal.h"
 #include "implementation/executor/helper/class_definition/main.h"
-#include "interface/storage/database.h"
 #include "interface/storage/page.h"
-
-/* put_u16_le and put_u32_le are now defined in database.c */
 
 enum EXECUTOR_RESULT execute_create_class(
     struct database* db, const struct analyzer_statement* statement) {
-        if (!db || !statement) {
-                return EXECUTOR_ERROR_BAD_STATEMENT;
-        }
-
-        /* Check if class already exists */
         uint32_t existing_page;
-        uint16_t existing_off;
-        uint16_t existing_len;
+        uint16_t existing_offset;
+        uint16_t existing_length;
+        helper_class_page_field* fields = NULL;
+        char** type_names               = NULL;
+        helper_class_page_definition definition;
+        uint16_t definition_length;
+        uint32_t definition_page = 0;
+        bool page_allocated      = false;
+        size_t i;
+        enum EXECUTOR_RESULT result = EXECUTOR_ERROR_BAD_STATEMENT;
+
+        if (db == NULL || statement == NULL || statement->name == NULL ||
+            statement->name[0] == '\0' ||
+            strlen(statement->name) > DB_PAGE_SIZE - DIR_PAGE_HDR_SIZE - 10u ||
+            statement->fields.count == 0 ||
+            statement->fields.count > UINT16_MAX ||
+            statement->fields.items == NULL ||
+            statement->implements.count > UINT16_MAX ||
+            (statement->implements.count > 0 &&
+             statement->implements.items == NULL) ||
+            db->hdr.class_count == UINT32_MAX) {
+                return EXECUTOR_ERROR_BAD_STATEMENT;
+        }
+
         if (db_class_dir_find(db, statement->name, &existing_page,
-                              &existing_off, &existing_len)) {
+                              &existing_offset, &existing_length)) {
                 return EXECUTOR_ERROR_BAD_STATEMENT;
         }
 
-        /* Allocate storage for the definition blob */
-        uint32_t def_page;
-        if (!db_alloc_page(db, &def_page)) {
+        if (statement->parent != NULL &&
+            (statement->parent[0] == '\0' ||
+             !db_class_dir_find(db, statement->parent, &existing_page,
+                                &existing_offset, &existing_length))) {
                 return EXECUTOR_ERROR_BAD_STATEMENT;
         }
 
-        /* Create the definition blob */
-        uint8_t* def_blob     = db->page_buf;
-        uint32_t def_blob_len = 0;
+        for (i = 0; i < statement->implements.count; ++i) {
+                size_t j;
 
-        /* Add field count (u16) */
-        uint16_t field_count = (uint16_t)statement->fields.count;
-        put_u16_le(def_blob + def_blob_len, field_count);
-        def_blob_len += 2;
-
-        /* Add each field's type and name */
-        for (size_t i = 0; i < statement->fields.count; i++) {
-                struct analyzer_field* field = statement->fields.items + i;
-
-                /* type_len (u16) + type + name_len (u16) + name */
-                uint16_t type_len = (uint16_t)strlen(field->type.class_name);
-                put_u16_le(def_blob + def_blob_len, type_len);
-                def_blob_len += 2;
-
-                memcpy(def_blob + def_blob_len, field->type.class_name,
-                       type_len);
-                def_blob_len += type_len;
-
-                uint16_t name_len = (uint16_t)strlen(field->name);
-                put_u16_le(def_blob + def_blob_len, name_len);
-                def_blob_len += 2;
-
-                memcpy(def_blob + def_blob_len, field->name, name_len);
-                def_blob_len += name_len;
-        }
-
-        /* Add parent name if specified */
-        if (statement->parent) {
-                uint16_t parent_len = (uint16_t)strlen(statement->parent);
-                put_u16_le(def_blob + def_blob_len, parent_len);
-                def_blob_len += 2;
-                memcpy(def_blob + def_blob_len, statement->parent, parent_len);
-                def_blob_len += parent_len;
-        } else {
-                put_u16_le(def_blob + def_blob_len, 0);
-                def_blob_len += 2;
-        }
-
-        /* Add each implemented interface */
-        if (statement->implements.count > 0) {
-                for (size_t i = 0; i < statement->implements.count; i++) {
-                        char* iface        = statement->implements.items[i];
-                        uint16_t iface_len = (uint16_t)strlen(iface);
-                        put_u16_le(def_blob + def_blob_len, iface_len);
-                        def_blob_len += 2;
-                        memcpy(def_blob + def_blob_len, iface, iface_len);
-                        def_blob_len += iface_len;
-                }
-        } else {
-                put_u16_le(def_blob + def_blob_len, 0);
-                def_blob_len += 2;
-        }
-
-        /* Write the definition blob to its page */
-        if (!db_write_page(db, def_page, def_blob)) {
-                db_free_page(db, def_page);
-                return EXECUTOR_ERROR_BAD_STATEMENT;
-        }
-
-        /* Update the header class count */
-        db->hdr.class_count++;
-
-        /* Add to the class directory */
-        uint16_t name_len    = (uint16_t)strlen(statement->name);
-        uint32_t parent_page = 0;
-        uint16_t parent_off  = 0;
-        uint16_t parent_len  = 0;
-        if (statement->parent) {
-                /* Find parent class location */
-                if (db_class_dir_find(db, statement->parent, &parent_page,
-                                      &parent_off, &parent_len)) {
-                        /* Remove allocated page on error */
-                        db_free_page(db, def_page);
+                if (statement->implements.items[i] == NULL ||
+                    statement->implements.items[i][0] == '\0' ||
+                    !db_interface_dir_find(db, statement->implements.items[i],
+                                           &existing_page, &existing_offset,
+                                           &existing_length)) {
                         return EXECUTOR_ERROR_BAD_STATEMENT;
                 }
+                for (j = 0; j < i; ++j) {
+                        if (strcmp(statement->implements.items[i],
+                                   statement->implements.items[j]) == 0) {
+                                return EXECUTOR_ERROR_BAD_STATEMENT;
+                        }
+                }
         }
 
-        uint16_t impl_count = (uint16_t)statement->implements.count;
-        uint32_t obj_page   = 0;
-
-        /* Write class directory entry */
-        put_u16_le(def_blob, name_len);
-        put_u32_le(def_blob + 2, def_page);
-        put_u32_le(def_blob + 6, def_blob_len);
-        put_u16_le(def_blob + 10, parent_len);
-        put_u16_le(def_blob + 12, impl_count);
-        put_u32_le(def_blob + 14, obj_page);
-        put_u16_le(def_blob + 18, (uint16_t)statement->fields.count);
-
-        if (!db_class_dir_put(db, statement->name, def_page, 0, def_blob_len,
-                              true)) {
-                db_free_page(db, def_page);
-                return EXECUTOR_ERROR_BAD_STATEMENT;
+        fields     = calloc(statement->fields.count, sizeof(*fields));
+        type_names = calloc(statement->fields.count, sizeof(*type_names));
+        if (fields == NULL || type_names == NULL) {
+                goto cleanup;
         }
 
+        for (i = 0; i < statement->fields.count; ++i) {
+                const struct analyzer_field* field =
+                    &statement->fields.items[i];
+                char type_buffer[DB_PAGE_SIZE];
+                size_t type_length;
+                size_t j;
+
+                if (field->name == NULL || field->name[0] == '\0') {
+                        goto cleanup;
+                }
+                for (j = 0; j < i; ++j) {
+                        if (strcmp(field->name, fields[j].name) == 0) {
+                                goto cleanup;
+                        }
+                }
+
+                type_length = executor_type_name(&field->type, type_buffer,
+                                                 sizeof(type_buffer));
+                if (type_length == 0) {
+                        goto cleanup;
+                }
+                if (field->type.kind == ANALYZER_TYPE_POINTER &&
+                    !db_class_dir_find(db, field->type.class_name,
+                                       &existing_page, &existing_offset,
+                                       &existing_length)) {
+                        goto cleanup;
+                }
+
+                type_names[i] = malloc(type_length + 1u);
+                if (type_names[i] == NULL) {
+                        goto cleanup;
+                }
+                memcpy(type_names[i], type_buffer, type_length + 1u);
+                fields[i].type_name = type_names[i];
+                fields[i].name      = field->name;
+        }
+
+        definition.field_count     = (uint16_t)statement->fields.count;
+        definition.fields          = fields;
+        definition.parent_name     = statement->parent;
+        definition.interface_count = (uint16_t)statement->implements.count;
+        definition.interfaces = (const char* const*)statement->implements.items;
+
+        if (!db_alloc_page(db, &definition_page)) {
+                goto cleanup;
+        }
+        page_allocated = true;
+
+        if (helper_write_class_page_definition(
+                db->page_buf, sizeof(db->page_buf), &definition,
+                &definition_length) != 0 ||
+            !db_write_page(db, definition_page, db->page_buf) ||
+            !db_class_dir_put(db, statement->name, definition_page, 0,
+                              definition_length, false)) {
+                goto cleanup;
+        }
+
+        db->hdr.class_count++;
         database_mark_modified(db);
-        return EXECUTOR_OK;
+        result = EXECUTOR_OK;
+
+cleanup:
+        if (result != EXECUTOR_OK && page_allocated) {
+                db_free_page(db, definition_page);
+        }
+        if (type_names != NULL) {
+                for (i = 0; i < statement->fields.count; ++i) {
+                        free(type_names[i]);
+                }
+        }
+        free(type_names);
+        free(fields);
+        return result;
 }

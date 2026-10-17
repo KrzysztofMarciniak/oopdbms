@@ -42,6 +42,7 @@ Names are stored without NUL terminators.
 ## Public API
 
 - `helper_write_class_definition()`
+- `helper_write_class_page_definition()`
 - `helper_read_class_definition()`
 - `helper_free_class_definition()`
 
@@ -50,6 +51,24 @@ Read and write functions return `0` on success and `-1` on failure.
 The reader allocates the class name, field array, field names, and interface
 ID array. The caller must release those allocations with
 `helper_free_class_definition()`.
+
+## Page-Based v2 Definition
+
+The page-based executor uses `helper_write_class_page_definition()` to encode
+the class-definition page:
+
+```text
+u16 field_count
+repeated: u16 type_length, type bytes, u16 name_length, name bytes
+u16 parent_name_length, parent name bytes (zero length when there is no parent)
+u16 interface_count
+repeated: u16 interface_name_length, interface name bytes
+```
+
+The class name is stored in the class directory entry. Type names use the
+command spelling, such as `integer` or `pointer Person`. This helper bounds
+checks the serialized definition against the supplied page buffer and returns
+its exact byte length.
 
 ## Dependencies
 

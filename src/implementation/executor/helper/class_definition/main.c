@@ -72,6 +72,124 @@ static int helper_class_validate_definition(
         return 0;
 }
 
+static int helper_class_page_write_u16(uint8_t* buffer, size_t buffer_size,
+                                       size_t* offset, uint16_t value) {
+        if (buffer == NULL || offset == NULL || *offset > buffer_size ||
+            buffer_size - *offset < sizeof(value)) {
+                return -1;
+        }
+
+        buffer[(*offset)++] = (uint8_t)value;
+        buffer[(*offset)++] = (uint8_t)(value >> 8);
+        return 0;
+}
+
+static int helper_class_page_write_string(uint8_t* buffer, size_t buffer_size,
+                                          size_t* offset, const char* value) {
+        size_t length;
+
+        if (buffer == NULL || offset == NULL || value == NULL) {
+                return -1;
+        }
+
+        length = strlen(value);
+        if (length == 0 || length > UINT16_MAX || *offset > buffer_size ||
+            buffer_size - *offset < length) {
+                return -1;
+        }
+
+        memcpy(buffer + *offset, value, length);
+        *offset += length;
+        return 0;
+}
+
+int helper_write_class_page_definition(
+    uint8_t* buffer, size_t buffer_size,
+    const helper_class_page_definition* definition, uint16_t* written) {
+        size_t offset = 0;
+        size_t i;
+        size_t parent_length;
+
+        if (buffer == NULL || definition == NULL || written == NULL ||
+            (definition->field_count > 0 && definition->fields == NULL) ||
+            (definition->interface_count > 0 &&
+             definition->interfaces == NULL) ||
+            buffer_size < sizeof(uint16_t)) {
+                return -1;
+        }
+
+        if (helper_class_page_write_u16(buffer, buffer_size, &offset,
+                                        definition->field_count) != 0) {
+                return -1;
+        }
+
+        for (i = 0; i < (size_t)definition->field_count; ++i) {
+                const helper_class_page_field* field = &definition->fields[i];
+                size_t type_length;
+                size_t name_length;
+
+                if (field->type_name == NULL || field->name == NULL) {
+                        return -1;
+                }
+                type_length = strlen(field->type_name);
+                name_length = strlen(field->name);
+                if (type_length == 0 || type_length > UINT16_MAX ||
+                    name_length == 0 || name_length > UINT16_MAX ||
+                    helper_class_page_write_u16(buffer, buffer_size, &offset,
+                                                (uint16_t)type_length) != 0 ||
+                    helper_class_page_write_string(buffer, buffer_size, &offset,
+                                                   field->type_name) != 0 ||
+                    helper_class_page_write_u16(buffer, buffer_size, &offset,
+                                                (uint16_t)name_length) != 0 ||
+                    helper_class_page_write_string(buffer, buffer_size, &offset,
+                                                   field->name) != 0) {
+                        return -1;
+                }
+        }
+
+        parent_length = definition->parent_name == NULL
+                            ? 0
+                            : strlen(definition->parent_name);
+        if (parent_length > UINT16_MAX ||
+            helper_class_page_write_u16(buffer, buffer_size, &offset,
+                                        (uint16_t)parent_length) != 0) {
+                return -1;
+        }
+        if (parent_length > 0 &&
+            helper_class_page_write_string(buffer, buffer_size, &offset,
+                                           definition->parent_name) != 0) {
+                return -1;
+        }
+
+        if (helper_class_page_write_u16(buffer, buffer_size, &offset,
+                                        definition->interface_count) != 0) {
+                return -1;
+        }
+        for (i = 0; i < (size_t)definition->interface_count; ++i) {
+                size_t interface_length;
+
+                if (definition->interfaces[i] == NULL) {
+                        return -1;
+                }
+                interface_length = strlen(definition->interfaces[i]);
+                if (interface_length == 0 || interface_length > UINT16_MAX ||
+                    helper_class_page_write_u16(buffer, buffer_size, &offset,
+                                                (uint16_t)interface_length) !=
+                        0 ||
+                    helper_class_page_write_string(buffer, buffer_size, &offset,
+                                                   definition->interfaces[i]) !=
+                        0) {
+                        return -1;
+                }
+        }
+
+        if (offset > UINT16_MAX) {
+                return -1;
+        }
+        *written = (uint16_t)offset;
+        return 0;
+}
+
 int helper_write_class_definition(FILE* file,
                                   const helper_class_definition* definition) {
         size_t name_length;
