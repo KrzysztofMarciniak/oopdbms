@@ -2,6 +2,21 @@
 
 An object-oriented programming-focused database management system.
 
+## Quick start
+
+Build an optimized binary, create a fresh demo database, and follow a guided
+walkthrough of interfaces, inheritance, pointers, objects, filters, functions,
+updates, and metadata:
+
+```sh
+make quick_start
+```
+
+The binary is `build/release/oopdbms`; the demo database is
+`build/quick-start.oopdb`. Each run recreates that database. Set
+`QUICK_START_DB` to choose another path. For a system-wide or user-local
+installation, use `make install` or `make install PREFIX="$HOME/.local"`.
+
 ## Commands
 
 ### Classes
@@ -114,15 +129,20 @@ DESCRIBE Employee
 ## Building
 
 ```sh
-make          # Format, then build to build/oopdbms
-make run      # Build and run
-make test     # Build and run every test in src/tests/ from the project root
-make docs     # Generate Doxygen HTML at build/docs/html/index.html
-make format   # Run clang-format on all sources
-make clean    # Remove build/
+make                         # Format, then build to build/oopdbms
+make run                     # Build and run
+make test                    # Build and run every test in src/tests/
+make release                 # Optimized build to build/release/oopdbms
+make install                 # Install release binary to /usr/local/bin
+make install PREFIX="$HOME/.local" # Install to ~/.local/bin without root
+make docs                    # Generate Doxygen HTML at build/docs/html/index.html
+make format                  # Run clang-format on all sources
+make clean                   # Remove build/
 ```
 
-Only plain C99 and Make are required for the build. `make docs` additionally requires Doxygen.
+The project builds with C99 and Make; `make`, `make release`, and
+`make quick_start` also run `clang-format`. `make install` requires the
+`install` utility, and `make docs` additionally requires Doxygen.
 
 ## How a command runs
 
