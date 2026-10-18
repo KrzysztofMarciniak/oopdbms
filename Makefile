@@ -5,11 +5,13 @@
 # @version 0.1
 
 CC ?= cc
+AR ?= ar
 CFLAGS := \
 		-std=c99 \
 		-Wall	\
 		-Wextra \
-		-Wpedantic 
+		-Wpedantic \
+		-fPIC
 
 TARGET := oopdbms
 BUILD_DIR := build
@@ -25,6 +27,16 @@ LIB_SOURCES := $(filter-out src/main.c,$(SOURCES))
 HEADERS := $(shell find src -type f -name '*.h')
 OBJECTS := $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(SOURCES))
 DEPFILES := $(OBJECTS:.o=.d)
+ENGINE_NAME := oopdbms-engine
+ENGINE_VERSION := 0.1.0
+ENGINE_SONAME := lib$(ENGINE_NAME).so.0
+ENGINE_DIR := $(BUILD_DIR)/lib
+ENGINE_STATIC := $(ENGINE_DIR)/lib$(ENGINE_NAME).a
+ENGINE_SHARED_REAL := $(ENGINE_DIR)/lib$(ENGINE_NAME).so.$(ENGINE_VERSION)
+ENGINE_SHARED := $(ENGINE_DIR)/$(ENGINE_SONAME)
+ENGINE_LINK := $(ENGINE_DIR)/lib$(ENGINE_NAME).so
+ENGINE_OBJECTS := $(patsubst src/%.c,$(BUILD_DIR)/engine/%.o,$(LIB_SOURCES))
+PUBLIC_HEADERS := $(shell find src/error src/interface -type f -name '*.h')
 DOXYGEN ?= doxygen
 DOCS_DIR := $(BUILD_DIR)/docs
 PREFIX ?= /usr/local
@@ -35,9 +47,9 @@ RELEASE_BINARY := $(RELEASE_DIR)/$(TARGET)
 RELEASE_CFLAGS ?= $(CFLAGS) -O2
 QUICK_START_DB ?= $(BUILD_DIR)/quick-start.oopdb
 
-.PHONY: build clean docs format install quick_start release run test
+.PHONY: all build clean docs engine format install quick_start release run test
 
-all: build
+all: build engine
 
 format:
 	@clang-format -i $(SOURCES) $(TEST_SOURCES) $(HEADERS)
@@ -51,9 +63,51 @@ release: format
 	@printf 'Building optimized release binary: %s\n' "$(RELEASE_BINARY)"
 	@$(CC) $(RELEASE_CFLAGS) -Isrc $(SOURCES) -o $(RELEASE_BINARY)
 
-install: release
-	$(INSTALL) -d "$(DESTDIR)$(PREFIX)/bin"
+engine: format $(ENGINE_STATIC) $(ENGINE_SHARED) $(ENGINE_LINK)
+
+$(ENGINE_STATIC): $(ENGINE_OBJECTS)
+	@mkdir -p $(@D)
+	$(AR) rcs $@ $^
+
+$(ENGINE_SHARED_REAL): $(ENGINE_OBJECTS)
+	@mkdir -p $(@D)
+	$(CC) -shared -Wl,-soname,$(ENGINE_SONAME) -o $@ $^
+
+$(ENGINE_SHARED): $(ENGINE_SHARED_REAL)
+	ln -sf $(notdir $(ENGINE_SHARED_REAL)) $@
+
+$(ENGINE_LINK): $(ENGINE_SHARED_REAL)
+	ln -sf $(notdir $(ENGINE_SHARED_REAL)) $@
+
+$(BUILD_DIR)/engine/%.o: src/%.c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -Isrc -MMD -MP -c $< -o $@
+
+install: release engine
+	$(INSTALL) -d "$(DESTDIR)$(PREFIX)/bin" \
+		"$(DESTDIR)$(PREFIX)/lib" \
+		"$(DESTDIR)$(PREFIX)/include/$(ENGINE_NAME)" \
+		"$(DESTDIR)$(PREFIX)/lib/pkgconfig" \
+		"$(DESTDIR)$(PREFIX)/share/licenses/$(ENGINE_NAME)"
 	$(INSTALL) -m 755 "$(RELEASE_BINARY)" "$(DESTDIR)$(PREFIX)/bin/$(TARGET)"
+	$(INSTALL) -m 644 $(ENGINE_STATIC) \
+		"$(DESTDIR)$(PREFIX)/lib/$(notdir $(ENGINE_STATIC))"
+	$(INSTALL) -m 755 $(ENGINE_SHARED_REAL) \
+		"$(DESTDIR)$(PREFIX)/lib/$(notdir $(ENGINE_SHARED_REAL))"
+	ln -sf $(notdir $(ENGINE_SHARED_REAL)) \
+		"$(DESTDIR)$(PREFIX)/lib/$(notdir $(ENGINE_SHARED))"
+	ln -sf $(notdir $(ENGINE_SHARED_REAL)) \
+		"$(DESTDIR)$(PREFIX)/lib/$(notdir $(ENGINE_LINK))"
+	@set -e; for header in $(PUBLIC_HEADERS); do \
+		relative=$${header#src/}; \
+		target="$(DESTDIR)$(PREFIX)/include/$(ENGINE_NAME)/$$relative"; \
+		$(INSTALL) -d "$$(dirname "$$target")"; \
+		$(INSTALL) -m 644 "$$header" "$$target"; \
+	done
+	sed 's|@prefix@|$(PREFIX)|g' oopdbms-engine.pc.in > \
+		"$(DESTDIR)$(PREFIX)/lib/pkgconfig/$(ENGINE_NAME).pc"
+	$(INSTALL) -m 644 LICENSE \
+		"$(DESTDIR)$(PREFIX)/share/licenses/$(ENGINE_NAME)/LICENSE"
 
 quick_start: release
 	@set -e; \
@@ -127,6 +181,8 @@ docs:
 
 clean:
 	rm -rf $(BUILD_DIR)
+
+-include $(ENGINE_OBJECTS:.o=.d)
 
 	
 # end

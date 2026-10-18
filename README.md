@@ -131,11 +131,12 @@ DESCRIBE Employee
 
 ```sh
 make                         # Format, then build to build/oopdbms
+make engine                  # Build liboopdbms-engine.a and liboopdbms-engine.so
 make run                     # Build and run
 make test                    # Build and run every test in src/tests/
 make release                 # Optimized build to build/release/oopdbms
-make install                 # Install release binary to /usr/local/bin
-make install PREFIX="$HOME/.local" # Install to ~/.local/bin without root
+make install                 # Install CLI, engine library, headers, and pkg-config metadata
+make install PREFIX="$HOME/.local" # Install to ~/.local without root
 make docs                    # Generate Doxygen HTML at build/docs/html/index.html
 make format                  # Run clang-format on all sources
 make clean                   # Remove build/
@@ -149,6 +150,13 @@ or when `NO_COLOR` is set.
 The project builds with C99 and Make; `make`, `make release`, and
 `make quick_start` also run `clang-format`. `make install` requires the
 `install` utility, and `make docs` additionally requires Doxygen.
+
+The installable `oopdbms-engine` library provides the engine interfaces under
+`include/oopdbms-engine` and is discoverable as `oopdbms-engine` through
+pkg-config. These installed headers are the supported C integration interface;
+source- or ABI-breaking changes require a package-version bump, and ABI breaks
+also require a SONAME bump. For a non-system prefix, set `PKG_CONFIG_PATH` to
+`$HOME/.local/lib/pkgconfig` when building applications against it.
 
 ## How a command runs
 
