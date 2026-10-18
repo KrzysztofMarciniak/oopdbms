@@ -16,6 +16,16 @@ uint64_t executor_helper_read_u64(const uint8_t* bytes);
 void executor_helper_write_u16(uint8_t* bytes, uint16_t value);
 void executor_helper_write_u32(uint8_t* bytes, uint32_t value);
 void executor_helper_write_u64(uint8_t* bytes, uint64_t value);
+size_t executor_helper_varint_size(uint64_t value);
+size_t executor_helper_svarint_size(int64_t value);
+bool executor_helper_write_varint(uint8_t* bytes, size_t capacity,
+                                  size_t* offset, uint64_t value);
+bool executor_helper_read_varint(const uint8_t* bytes, size_t length,
+                                 size_t* offset, uint64_t* value);
+bool executor_helper_write_svarint(uint8_t* bytes, size_t capacity,
+                                   size_t* offset, int64_t value);
+bool executor_helper_read_svarint(const uint8_t* bytes, size_t length,
+                                  size_t* offset, int64_t* value);
 
 bool executor_helper_range_valid(size_t buffer_size, uint64_t offset,
                                  uint64_t length);

@@ -32,5 +32,20 @@ bool executor_helper_read_object_header(
 bool executor_helper_read_object_field(
     const uint8_t* bytes, size_t record_length, size_t* offset,
     struct executor_format_object_field_view* field);
+bool executor_helper_compact_object_record_size(
+    uint64_t object_id, uint16_t flags,
+    const struct executor_format_object_field* fields, size_t field_count,
+    size_t* size);
+bool executor_helper_create_compact_object_record(
+    uint8_t* output, size_t capacity, uint64_t object_id, uint16_t flags,
+    const struct executor_format_object_field* fields, size_t field_count,
+    size_t* written);
+bool executor_helper_read_compact_object_header(
+    const uint8_t* bytes, size_t record_length,
+    struct executor_format_object_header* header, size_t* fields_offset);
+bool executor_helper_read_compact_object_field(
+    const uint8_t* bytes, size_t record_length, size_t* offset,
+    const struct executor_format_field* schema_field,
+    struct executor_format_object_field* field);
 
 #endif
