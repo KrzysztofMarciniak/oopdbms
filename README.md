@@ -1,6 +1,7 @@
 # oopdbms
 
-An object-oriented programming-focused database management system.
+- [C library for OODBMS integration](https://github.com/krzysztofMarciniak/oopdbmsc)
+
 
 ## Quick start
 
