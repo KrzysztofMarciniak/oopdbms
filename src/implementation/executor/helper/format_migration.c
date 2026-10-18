@@ -3,7 +3,7 @@
 
 /**
  * @file format_migration.c
- * @brief Upgrade contiguous object segments to append-only object logs.
+ * @brief Migrate legacy object storage to compact object logs.
  */
 
 #include <limits.h>
@@ -52,8 +52,7 @@ static bool _write_object_log(FILE* output, const uint8_t* record,
         bool ok;
 
         if (output == NULL || record == NULL || new_head == NULL ||
-            bytes_written == NULL ||
-            record_length < EXECUTOR_FORMAT_OBJECT_HEADER_SIZE) {
+            bytes_written == NULL || record_length < 2) {
                 return false;
         }
         node_length = (size_t)record_length;
@@ -80,9 +79,145 @@ static bool _write_object_log(FILE* output, const uint8_t* record,
         return true;
 }
 
-static bool _migrate_class_data(struct executor_format_file* source,
-                                FILE* output,
-                                struct executor_format_class_entry* entry) {
+struct migration_object_record {
+        uint8_t* bytes;
+        uint32_t length;
+};
+
+struct migration_id_set {
+        uint64_t* slots;
+        size_t capacity;
+        size_t count;
+};
+
+static size_t _migration_id_hash(uint64_t object_id, size_t capacity) {
+        object_id ^= object_id >> 33;
+        object_id *= UINT64_C(0xff51afd7ed558ccd);
+        object_id ^= object_id >> 33;
+        object_id *= UINT64_C(0xc4ceb9fe1a85ec53);
+        object_id ^= object_id >> 33;
+        return (size_t)object_id & (capacity - 1);
+}
+
+static bool _migration_id_set_add(struct migration_id_set* set,
+                                  uint64_t object_id, bool* already_seen) {
+        size_t slot;
+
+        if (set == NULL || already_seen == NULL || object_id == 0) {
+                return false;
+        }
+        if (set->capacity == 0 || set->count + 1 > set->capacity / 2) {
+                size_t new_capacity =
+                    set->capacity == 0 ? 16 : set->capacity * 2;
+                uint64_t* grown;
+                size_t i;
+
+                if (new_capacity < set->capacity ||
+                    new_capacity > SIZE_MAX / sizeof *set->slots) {
+                        return false;
+                }
+                grown = calloc(new_capacity, sizeof *grown);
+                if (grown == NULL) {
+                        return false;
+                }
+                for (i = 0; i < set->capacity; i++) {
+                        if (set->slots[i] != 0) {
+                                size_t target = _migration_id_hash(
+                                    set->slots[i], new_capacity);
+                                while (grown[target] != 0) {
+                                        target =
+                                            (target + 1) & (new_capacity - 1);
+                                }
+                                grown[target] = set->slots[i];
+                        }
+                }
+                free(set->slots);
+                set->slots    = grown;
+                set->capacity = new_capacity;
+        }
+        slot = _migration_id_hash(object_id, set->capacity);
+        while (set->slots[slot] != 0) {
+                if (set->slots[slot] == object_id) {
+                        *already_seen = true;
+                        return true;
+                }
+                slot = (slot + 1) & (set->capacity - 1);
+        }
+        set->slots[slot] = object_id;
+        set->count++;
+        *already_seen = false;
+        return true;
+}
+
+static bool _compact_v1_object_record(const uint8_t* record,
+                                      uint32_t record_length,
+                                      uint8_t** compact_record,
+                                      uint32_t* compact_length) {
+        struct executor_format_object_header header;
+        struct executor_format_object_field* fields = NULL;
+        uint8_t* output                             = NULL;
+        size_t offset;
+        size_t output_length;
+        size_t i;
+        bool result = false;
+
+        if (record == NULL || compact_record == NULL ||
+            compact_length == NULL ||
+            record_length < EXECUTOR_FORMAT_OBJECT_HEADER_SIZE ||
+            !executor_helper_read_object_header(record, record_length,
+                                                &header) ||
+            header.record_length != record_length || header.object_id == 0 ||
+            (header.flags & ~EXECUTOR_FORMAT_OBJECT_FLAG_DELETED) != 0 ||
+            ((header.flags & EXECUTOR_FORMAT_OBJECT_FLAG_DELETED) != 0 &&
+             header.field_count != 0)) {
+                return false;
+        }
+        if (header.field_count != 0) {
+                fields = calloc(header.field_count, sizeof *fields);
+                if (fields == NULL) {
+                        return false;
+                }
+        }
+        offset = EXECUTOR_FORMAT_OBJECT_HEADER_SIZE;
+        for (i = 0; i < header.field_count; i++) {
+                struct executor_format_object_field_view field;
+
+                if (!executor_helper_read_object_field(record, record_length,
+                                                       &offset, &field)) {
+                        goto done;
+                }
+                fields[i].field_id     = field.field_id;
+                fields[i].type_code    = field.type_code;
+                fields[i].value        = field.value;
+                fields[i].value_length = field.value_length;
+        }
+        if (offset != record_length ||
+            !executor_helper_compact_object_record_size(
+                header.object_id, header.flags, fields, header.field_count,
+                &output_length) ||
+            output_length > UINT32_MAX) {
+                goto done;
+        }
+        output = malloc(output_length);
+        if (output == NULL ||
+            !executor_helper_create_compact_object_record(
+                output, output_length, header.object_id, header.flags, fields,
+                header.field_count, &output_length)) {
+                goto done;
+        }
+        *compact_record = output;
+        *compact_length = (uint32_t)output_length;
+        output          = NULL;
+        result          = true;
+done:
+        free(output);
+        free(fields);
+        return result;
+}
+
+static bool _migrate_contiguous_class_data(
+    struct executor_format_file* source, FILE* output,
+    struct executor_format_class_entry* entry) {
         uint64_t source_cursor = 0;
         uint64_t log_head      = 0;
         uint64_t log_length    = 0;
@@ -97,12 +232,12 @@ static bool _migrate_class_data(struct executor_format_file* source,
                 uint8_t record_header[EXECUTOR_FORMAT_OBJECT_HEADER_SIZE];
                 struct executor_format_object_header parsed;
                 uint32_t record_length;
-                uint8_t* record;
+                uint8_t* record                = NULL;
+                uint8_t* compact_record        = NULL;
+                uint32_t compact_record_length = 0;
                 uint64_t next_cursor;
                 uint64_t new_head;
                 uint64_t node_length;
-                size_t field_cursor;
-                size_t field_index;
 
                 if (entry->data_length - source_cursor <
                         EXECUTOR_FORMAT_OBJECT_HEADER_SIZE ||
@@ -121,35 +256,27 @@ static bool _migrate_class_data(struct executor_format_file* source,
                     !executor_format_file_read(
                         source, entry->data_offset + source_cursor, record,
                         record_length) ||
+                    !executor_helper_add_u64(source_cursor, record_length,
+                                             &next_cursor)) {
+                        free(record);
+                        return false;
+                }
+                if (!_compact_v1_object_record(record, record_length,
+                                               &compact_record,
+                                               &compact_record_length) ||
                     !executor_helper_read_object_header(record, record_length,
                                                         &parsed) ||
-                    parsed.record_length != record_length ||
-                    parsed.object_id == 0 || parsed.flags != 0 ||
-                    !executor_helper_add_u64(source_cursor, record_length,
-                                             &next_cursor) ||
-                    !_write_object_log(output, record, record_length, log_head,
+                    parsed.flags != 0 ||
+                    !_write_object_log(output, compact_record,
+                                       compact_record_length, log_head,
                                        &new_head, &node_length) ||
                     !executor_helper_add_u64(log_length, node_length,
                                              &log_length)) {
+                        free(compact_record);
                         free(record);
                         return false;
                 }
-                field_cursor = EXECUTOR_FORMAT_OBJECT_HEADER_SIZE;
-                for (field_index = 0; field_index < parsed.field_count;
-                     field_index++) {
-                        struct executor_format_object_field_view field;
-
-                        if (!executor_helper_read_object_field(
-                                record, parsed.record_length, &field_cursor,
-                                &field)) {
-                                free(record);
-                                return false;
-                        }
-                }
-                if (field_cursor != parsed.record_length) {
-                        free(record);
-                        return false;
-                }
+                free(compact_record);
                 free(record);
                 log_head      = new_head;
                 source_cursor = next_cursor;
@@ -167,7 +294,153 @@ static bool _migrate_class_data(struct executor_format_file* source,
         return true;
 }
 
-static bool _migrate_to_log(struct executor_format_file* source, FILE* output) {
+static bool _migrate_log_class_data(struct executor_format_file* source,
+                                    FILE* output,
+                                    struct executor_format_class_entry* entry) {
+        struct migration_id_set seen_ids        = {0};
+        struct migration_object_record* records = NULL;
+        size_t record_count                     = 0;
+        size_t record_capacity                  = 0;
+        uint64_t node_offset                    = entry->data_offset;
+        uint64_t visited_length                 = 0;
+        uint64_t live_count                     = 0;
+        uint64_t new_head                       = 0;
+        uint64_t new_length                     = 0;
+        size_t i;
+        bool result = false;
+
+        if (entry->data_length > SIZE_MAX ||
+            (entry->data_offset == 0 && entry->data_length != 0)) {
+                goto done;
+        }
+        while (node_offset != 0) {
+                uint8_t
+                    node_header[EXECUTOR_FORMAT_OBJECT_LOG_NODE_HEADER_SIZE];
+                uint64_t previous_offset;
+                uint64_t record_offset;
+                uint64_t node_length;
+                uint32_t record_length;
+                uint8_t* record         = NULL;
+                uint8_t* compact_record = NULL;
+                uint32_t compact_length = 0;
+                struct executor_format_object_header header;
+                bool already_seen;
+
+                if (!executor_helper_range_valid(
+                        source->size, node_offset,
+                        EXECUTOR_FORMAT_OBJECT_LOG_NODE_HEADER_SIZE) ||
+                    !executor_format_file_read(source, node_offset, node_header,
+                                               sizeof node_header)) {
+                        goto done;
+                }
+                previous_offset = executor_helper_read_u64(node_header);
+                record_length   = executor_helper_read_u32(node_header + 8);
+                if (record_length < EXECUTOR_FORMAT_OBJECT_HEADER_SIZE ||
+                    (previous_offset != 0 && previous_offset >= node_offset) ||
+                    !executor_helper_add_u64(
+                        node_offset,
+                        EXECUTOR_FORMAT_OBJECT_LOG_NODE_HEADER_SIZE,
+                        &record_offset) ||
+                    !executor_helper_range_valid(source->size, record_offset,
+                                                 record_length) ||
+                    !executor_helper_add_u64(
+                        record_length,
+                        EXECUTOR_FORMAT_OBJECT_LOG_NODE_HEADER_SIZE,
+                        &node_length) ||
+                    !executor_helper_add_u64(visited_length, node_length,
+                                             &visited_length) ||
+                    visited_length > entry->data_length) {
+                        goto done;
+                }
+                record = malloc(record_length);
+                if (record == NULL ||
+                    !executor_format_file_read(source, record_offset, record,
+                                               record_length) ||
+                    !_compact_v1_object_record(record, record_length,
+                                               &compact_record,
+                                               &compact_length) ||
+                    !executor_helper_read_object_header(record, record_length,
+                                                        &header)) {
+                        free(compact_record);
+                        free(record);
+                        goto done;
+                }
+                if (!_migration_id_set_add(&seen_ids, header.object_id,
+                                           &already_seen)) {
+                        free(compact_record);
+                        free(record);
+                        goto done;
+                }
+                if (!already_seen &&
+                    (header.flags & EXECUTOR_FORMAT_OBJECT_FLAG_DELETED) == 0) {
+                        struct migration_object_record* grown;
+
+                        if (record_count == record_capacity) {
+                                size_t new_capacity = record_capacity == 0
+                                                          ? 8
+                                                          : record_capacity * 2;
+                                if (new_capacity < record_capacity ||
+                                    new_capacity > SIZE_MAX / sizeof *records) {
+                                        free(compact_record);
+                                        free(record);
+                                        goto done;
+                                }
+                                grown = realloc(records,
+                                                new_capacity * sizeof *records);
+                                if (grown == NULL) {
+                                        free(compact_record);
+                                        free(record);
+                                        goto done;
+                                }
+                                records         = grown;
+                                record_capacity = new_capacity;
+                        }
+                        records[record_count].bytes  = compact_record;
+                        records[record_count].length = compact_length;
+                        record_count++;
+                        compact_record = NULL;
+                        if (live_count == UINT64_MAX) {
+                                free(record);
+                                goto done;
+                        }
+                        live_count++;
+                }
+                free(compact_record);
+                free(record);
+                node_offset = previous_offset;
+        }
+        if (visited_length != entry->data_length ||
+            live_count != entry->object_count) {
+                goto done;
+        }
+        for (i = record_count; i > 0; i--) {
+                uint64_t record_node_offset;
+                uint64_t node_length;
+
+                if (!_write_object_log(output, records[i - 1].bytes,
+                                       records[i - 1].length, new_head,
+                                       &record_node_offset, &node_length) ||
+                    !executor_helper_add_u64(new_length, node_length,
+                                             &new_length)) {
+                        goto done;
+                }
+                new_head = record_node_offset;
+        }
+        entry->data_offset  = new_head;
+        entry->data_length  = new_length;
+        entry->object_count = live_count;
+        result              = true;
+done:
+        for (i = 0; i < record_count; i++) {
+                free(records[i].bytes);
+        }
+        free(records);
+        free(seen_ids.slots);
+        return result;
+}
+
+static bool _migrate_to_compact(struct executor_format_file* source,
+                                FILE* output) {
         struct executor_format_header header       = source->header;
         struct executor_format_metatable metatable = {0};
         size_t interface_table_length;
@@ -189,7 +462,8 @@ static bool _migrate_to_log(struct executor_format_file* source, FILE* output) {
         size_t i;
         bool result = false;
 
-        if (header.version != EXECUTOR_FORMAT_VERSION_CONTIGUOUS ||
+        if ((header.version != EXECUTOR_FORMAT_VERSION_CONTIGUOUS &&
+             header.version != EXECUTOR_FORMAT_VERSION_OBJECT_LOG) ||
             !executor_helper_multiply_u64(header.interface_count,
                                           EXECUTOR_FORMAT_INTERFACE_ENTRY_SIZE,
                                           &interface_table_length_u64) ||
@@ -232,7 +506,7 @@ static bool _migrate_to_log(struct executor_format_file* source, FILE* output) {
         metatable.functions.offset  = function_table_offset;
         metatable.functions.length  = function_table_length;
 
-        header.version = EXECUTOR_FORMAT_VERSION_OBJECT_LOG;
+        header.version = EXECUTOR_FORMAT_VERSION_COMPACT_OBJECT_LOG;
         if (!executor_helper_create_header(header_bytes, sizeof header_bytes,
                                            &header) ||
             !executor_helper_create_metatable(
@@ -334,7 +608,11 @@ static bool _migrate_to_log(struct executor_format_file* source, FILE* output) {
                 }
                 free(definition);
                 entry.definition_offset = definition_offset;
-                if (!_migrate_class_data(source, output, &entry) ||
+                if (!(source->header.version ==
+                              EXECUTOR_FORMAT_VERSION_CONTIGUOUS
+                          ? _migrate_contiguous_class_data(source, output,
+                                                           &entry)
+                          : _migrate_log_class_data(source, output, &entry)) ||
                     !executor_helper_create_class_entry(
                         class_table + i * EXECUTOR_FORMAT_CLASS_ENTRY_SIZE,
                         EXECUTOR_FORMAT_CLASS_ENTRY_SIZE, &entry)) {
@@ -432,7 +710,7 @@ bool executor_format_file_migrate(struct database* database) {
             !executor_format_file_load(database, &source)) {
                 return false;
         }
-        if (source.header.version == EXECUTOR_FORMAT_VERSION_OBJECT_LOG) {
+        if (source.header.version == EXECUTOR_FORMAT_VERSION_CURRENT) {
                 return true;
         }
         resolved_path = realpath(database->path, NULL);
@@ -464,7 +742,7 @@ bool executor_format_file_migrate(struct database* database) {
                 goto done;
         }
         descriptor   = -1;
-        migration_ok = _migrate_to_log(&source, output);
+        migration_ok = _migrate_to_compact(&source, output);
         if (migration_ok) {
                 migration_ok =
                     fflush(output) == 0 && fsync(fileno(output)) == 0;

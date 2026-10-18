@@ -45,11 +45,17 @@ OOPDB=$oopdb_db "$oopdbms" 'FIND Person' > "$workdir/oopdb-find.txt"
 live_count=$(wc -l < "$workdir/oopdb-find.txt" | tr -d ' ')
 sqlite_size=$(wc -c < "$sqlite_db" | tr -d ' ')
 oopdb_size=$(wc -c < "$oopdb_db" | tr -d ' ')
-max_oopdb_size=$((record_count * 70 + 4096))
+format_version=$(od -An -tu1 -j14 -N2 "$oopdb_db" | awk '{print $1 + 256 * $2}')
+max_oopdb_size=$((record_count * 40 + 4096))
 
 printf 'Same dataset: %s Person records\n' "$record_count"
 printf 'SQLite file:  %s bytes (%s)\n' "$sqlite_size" "$sqlite_db"
 printf 'OOPDB file:   %s bytes (%s)\n' "$oopdb_size" "$oopdb_db"
+printf 'OOPDB format: version %s\n' "$format_version"
+if [ "$format_version" -ne 2 ]; then
+        echo "Expected compact OOPDB format version 2, found $format_version" >&2
+        exit 1
+fi
 if [ "$live_count" -ne "$record_count" ]; then
         echo "Expected $record_count live OOPDB records, found $live_count" >&2
         exit 1

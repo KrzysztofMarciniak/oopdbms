@@ -12,6 +12,35 @@ struct object_log_record {
         bool deleted;
 };
 
+static bool _serialize_object_fields(
+    uint16_t format_version, uint64_t object_id, uint16_t flags,
+    const struct executor_format_object_field* fields, size_t count,
+    uint8_t** bytes, size_t* length);
+
+static bool _read_object_record_header(
+    uint16_t format_version, const uint8_t* record, size_t record_length,
+    struct executor_format_object_header* header) {
+        if (format_version == EXECUTOR_FORMAT_VERSION_OBJECT_LOG) {
+                return record_length >= EXECUTOR_FORMAT_OBJECT_HEADER_SIZE &&
+                       executor_helper_read_object_header(record, record_length,
+                                                          header) &&
+                       header->record_length == record_length &&
+                       header->object_id != 0 &&
+                       (header->flags & ~EXECUTOR_FORMAT_OBJECT_FLAG_DELETED) ==
+                           0 &&
+                       ((header->flags & EXECUTOR_FORMAT_OBJECT_FLAG_DELETED) ==
+                            0 ||
+                        header->field_count == 0);
+        }
+        if (format_version == EXECUTOR_FORMAT_VERSION_COMPACT_OBJECT_LOG) {
+                size_t fields_offset;
+
+                return executor_helper_read_compact_object_header(
+                    record, record_length, header, &fields_offset);
+        }
+        return false;
+}
+
 static bool _read_object_log_node(
     const struct executor_format_file* file, uint64_t node_offset,
     uint64_t* previous_offset, uint8_t** record_bytes,
@@ -32,7 +61,7 @@ static bool _read_object_log_node(
         }
         *previous_offset = executor_helper_read_u64(node_header);
         record_length    = executor_helper_read_u32(node_header + 8);
-        if (record_length < EXECUTOR_FORMAT_OBJECT_HEADER_SIZE ||
+        if (record_length == 0 ||
             (*previous_offset != 0 && *previous_offset >= node_offset) ||
             !executor_helper_add_u64(
                 node_offset, EXECUTOR_FORMAT_OBJECT_LOG_NODE_HEADER_SIZE,
@@ -42,15 +71,13 @@ static bool _read_object_log_node(
                 return false;
         }
         record = malloc(record_length);
-        if (record == NULL ||
-            !executor_format_file_read(file, record_offset, record,
-                                       record_length) ||
-            !executor_helper_read_object_header(record, record_length,
-                                                header) ||
-            header->record_length != record_length || header->object_id == 0 ||
-            (header->flags & ~EXECUTOR_FORMAT_OBJECT_FLAG_DELETED) != 0 ||
-            ((header->flags & EXECUTOR_FORMAT_OBJECT_FLAG_DELETED) != 0 &&
-             header->field_count != 0)) {
+        if (record == NULL || !executor_format_file_read(
+                                  file, record_offset, record, record_length)) {
+                free(record);
+                return false;
+        }
+        if (!_read_object_record_header(file->header.version, record,
+                                        record_length, header)) {
                 free(record);
                 return false;
         }
@@ -156,7 +183,9 @@ static bool _collect_object_log_records(
 
         if (file == NULL || entry == NULL || output == NULL ||
             output_count == NULL ||
-            file->header.version != EXECUTOR_FORMAT_VERSION_OBJECT_LOG) {
+            (file->header.version != EXECUTOR_FORMAT_VERSION_OBJECT_LOG &&
+             file->header.version !=
+                 EXECUTOR_FORMAT_VERSION_COMPACT_OBJECT_LOG)) {
                 return false;
         }
         node_offset = entry->data_offset;
@@ -261,7 +290,7 @@ static bool _find_object_in_class(
     const struct executor_format_class_entry* entry, uint64_t object_id,
     uint8_t** segment_bytes, size_t* record_offset,
     struct executor_format_object_header* header) {
-        if (file->header.version == EXECUTOR_FORMAT_VERSION_OBJECT_LOG) {
+        if (file->header.version >= EXECUTOR_FORMAT_VERSION_OBJECT_LOG) {
                 uint64_t node_offset  = entry->data_offset;
                 uint64_t total_length = 0;
                 uint8_t* found_record = NULL;
@@ -531,9 +560,15 @@ static bool _append_object_log_version(
         uint64_t updated_data_length;
         bool result = false;
 
-        if (file->header.version != EXECUTOR_FORMAT_VERSION_OBJECT_LOG ||
+        if ((file->header.version != EXECUTOR_FORMAT_VERSION_OBJECT_LOG &&
+             file->header.version !=
+                 EXECUTOR_FORMAT_VERSION_COMPACT_OBJECT_LOG) ||
             class_index >= class_count || record == NULL ||
-            record_length < EXECUTOR_FORMAT_OBJECT_HEADER_SIZE ||
+            (file->header.version == EXECUTOR_FORMAT_VERSION_OBJECT_LOG &&
+             record_length < EXECUTOR_FORMAT_OBJECT_HEADER_SIZE) ||
+            (file->header.version ==
+                 EXECUTOR_FORMAT_VERSION_COMPACT_OBJECT_LOG &&
+             record_length < 2) ||
             record_length > UINT32_MAX ||
             record_length >
                 SIZE_MAX - EXECUTOR_FORMAT_OBJECT_LOG_NODE_HEADER_SIZE ||
@@ -593,11 +628,10 @@ static enum EXECUTOR_RESULT _new_object(
         struct executor_format_class_entry entry;
         struct executor_format_field* schema               = NULL;
         struct executor_format_object_field* record_fields = NULL;
-        struct executor_format_object_record record;
-        uint8_t* record_bytes = NULL;
-        uint8_t* old_segment  = NULL;
-        uint8_t* segment      = NULL;
-        size_t schema_count   = 0;
+        uint8_t* record_bytes                              = NULL;
+        uint8_t* old_segment                               = NULL;
+        uint8_t* segment                                   = NULL;
+        size_t schema_count                                = 0;
         size_t class_index;
         size_t record_length;
         size_t segment_length;
@@ -662,26 +696,13 @@ static enum EXECUTOR_RESULT _new_object(
                         goto done;
                 }
         }
-        record.object_id   = object_id;
-        record.flags       = 0;
-        record.fields      = record_fields;
-        record.field_count = (uint16_t)schema_count;
-        record_length      = 16;
-        for (i = 0; i < schema_count; i++) {
-                size_t add = 9 + record_fields[i].value_length;
-                if (add > SIZE_MAX - record_length) {
-                        goto done;
-                }
-                record_length += add;
-        }
-        record_bytes = malloc(record_length);
-        if (record_bytes == NULL ||
-            !executor_helper_create_object_record(record_bytes, record_length,
-                                                  &record, &record_length)) {
+        if (!_serialize_object_fields(file.header.version, object_id, 0,
+                                      record_fields, schema_count,
+                                      &record_bytes, &record_length)) {
                 result = EXECUTOR_ERROR_STORAGE_FAILED;
                 goto done;
         }
-        if (file.header.version == EXECUTOR_FORMAT_VERSION_OBJECT_LOG) {
+        if (file.header.version >= EXECUTOR_FORMAT_VERSION_OBJECT_LOG) {
                 if (entry.object_count == UINT64_MAX) {
                         goto done;
                 }
@@ -758,6 +779,9 @@ done:
 void _free_object_fields(struct executor_format_object_field* fields,
                          size_t count) {
         size_t i;
+        if (fields == NULL) {
+                return;
+        }
         for (i = 0; i < count; i++) {
                 free((void*)fields[i].value);
         }
@@ -778,7 +802,7 @@ static bool _schema_index_by_id(const struct executor_format_field* schema,
 }
 
 static bool _decode_object_fields(
-    const uint8_t* bytes, size_t offset,
+    uint16_t format_version, const uint8_t* bytes, size_t offset,
     const struct executor_format_object_header* object_header,
     const struct executor_format_field* schema, size_t schema_count,
     struct executor_format_object_field** fields) {
@@ -787,8 +811,42 @@ static bool _decode_object_fields(
         size_t i;
 
         if (bytes == NULL || object_header == NULL || fields == NULL ||
-            object_header->field_count != schema_count ||
             offset > SIZE_MAX - object_header->record_length) {
+                return false;
+        }
+        if (format_version == EXECUTOR_FORMAT_VERSION_COMPACT_OBJECT_LOG) {
+                size_t cursor;
+                struct executor_format_object_header parsed;
+
+                if (!executor_helper_read_compact_object_header(
+                        bytes + offset, object_header->record_length, &parsed,
+                        &cursor) ||
+                    parsed.object_id != object_header->object_id ||
+                    parsed.flags != object_header->flags) {
+                        return false;
+                }
+                result = calloc(schema_count == 0 ? 1 : schema_count,
+                                sizeof *result);
+                if (result == NULL) {
+                        return false;
+                }
+                for (i = 0; i < schema_count; i++) {
+                        if (!executor_helper_read_compact_object_field(
+                                bytes + offset, object_header->record_length,
+                                &cursor, &schema[i], &result[i])) {
+                                _free_object_fields(result, schema_count);
+                                return false;
+                        }
+                }
+                if (cursor != object_header->record_length) {
+                        _free_object_fields(result, schema_count);
+                        return false;
+                }
+                *fields = result;
+                return true;
+        }
+        if (format_version != EXECUTOR_FORMAT_VERSION_OBJECT_LOG ||
+            object_header->field_count != schema_count) {
                 return false;
         }
         result = calloc(schema_count == 0 ? 1 : schema_count, sizeof *result);
@@ -864,8 +922,9 @@ bool _load_object_fields(struct executor_format_file* file,
 
         if (!_find_object_in_class(file, entry, object_id, &bytes, &offset,
                                    &object_header) ||
-            !_decode_object_fields(bytes, offset, &object_header, schema,
-                                   schema_count, &result)) {
+            !_decode_object_fields(file->header.version, bytes, offset,
+                                   &object_header, schema, schema_count,
+                                   &result)) {
                 free(bytes);
                 _free_object_fields(result, schema_count);
                 return false;
@@ -890,15 +949,38 @@ bool _load_object_fields(struct executor_format_file* file,
 }
 
 static bool _serialize_object_fields(
-    uint64_t object_id, const struct executor_format_object_field* fields,
-    size_t count, uint8_t** bytes, size_t* length) {
+    uint16_t format_version, uint64_t object_id, uint16_t flags,
+    const struct executor_format_object_field* fields, size_t count,
+    uint8_t** bytes, size_t* length) {
         struct executor_format_object_record record;
-        size_t capacity = EXECUTOR_FORMAT_OBJECT_HEADER_SIZE;
+        size_t capacity;
         size_t i;
 
-        if (count > UINT16_MAX) {
+        if (format_version == EXECUTOR_FORMAT_VERSION_COMPACT_OBJECT_LOG) {
+                if (!executor_helper_compact_object_record_size(
+                        object_id, flags, fields, count, &capacity)) {
+                        return false;
+                }
+                *bytes = malloc(capacity == 0 ? 1 : capacity);
+                if (*bytes == NULL ||
+                    !executor_helper_create_compact_object_record(
+                        *bytes, capacity, object_id, flags, fields, count,
+                        length)) {
+                        free(*bytes);
+                        *bytes = NULL;
+                        return false;
+                }
+                return true;
+        }
+        if (format_version != EXECUTOR_FORMAT_VERSION_CONTIGUOUS &&
+            format_version != EXECUTOR_FORMAT_VERSION_OBJECT_LOG) {
                 return false;
         }
+        if (count > UINT16_MAX ||
+            count > (SIZE_MAX - EXECUTOR_FORMAT_OBJECT_HEADER_SIZE) / 9) {
+                return false;
+        }
+        capacity = EXECUTOR_FORMAT_OBJECT_HEADER_SIZE;
         for (i = 0; i < count; i++) {
                 size_t field_length = 9 + fields[i].value_length;
                 if (field_length > SIZE_MAX - capacity) {
@@ -911,7 +993,7 @@ static bool _serialize_object_fields(
                 return false;
         }
         record.object_id   = object_id;
-        record.flags       = 0;
+        record.flags       = flags;
         record.fields      = fields;
         record.field_count = (uint16_t)count;
         if (!executor_helper_create_object_record(*bytes, capacity, &record,
@@ -986,12 +1068,13 @@ static enum EXECUTOR_RESULT _set_object(
                 fields[field_index].value        = value;
                 fields[field_index].value_length = value_length;
         }
-        if (!_serialize_object_fields(object_id, fields, schema_count,
-                                      &new_record_bytes, &new_record_length)) {
+        if (!_serialize_object_fields(file.header.version, object_id, 0, fields,
+                                      schema_count, &new_record_bytes,
+                                      &new_record_length)) {
                 result = EXECUTOR_ERROR_STORAGE_FAILED;
                 goto done;
         }
-        if (file.header.version == EXECUTOR_FORMAT_VERSION_OBJECT_LOG) {
+        if (file.header.version >= EXECUTOR_FORMAT_VERSION_OBJECT_LOG) {
                 if (!_append_object_log_version(&file, class_index, &entry,
                                                 new_record_bytes,
                                                 new_record_length)) {
@@ -1053,58 +1136,76 @@ static bool _object_is_referenced(struct executor_format_file* file,
                 if (!executor_format_file_read_class_entry(file, i, &entry)) {
                         return true;
                 }
-                if (file->header.version ==
+                if (file->header.version >=
                     EXECUTOR_FORMAT_VERSION_OBJECT_LOG) {
-                        struct object_log_record* records = NULL;
-                        size_t record_count               = 0;
+                        struct executor_format_field* schema = NULL;
+                        size_t schema_count                  = 0;
+                        struct object_log_record* records    = NULL;
+                        size_t record_count                  = 0;
                         size_t record_index;
 
-                        if (!_collect_object_log_records(file, &entry, &records,
+                        if (!_collect_schema_fields(file, entry.class_id,
+                                                    &schema, &schema_count) ||
+                            !_collect_object_log_records(file, &entry, &records,
                                                          &record_count)) {
+                                _free_schema_fields(schema, schema_count);
+                                _free_object_log_records(records, record_count);
                                 return true;
                         }
                         for (record_index = 0; record_index < record_count;
                              record_index++) {
                                 struct object_log_record* record =
                                     &records[record_index];
-                                size_t cursor =
-                                    EXECUTOR_FORMAT_OBJECT_HEADER_SIZE;
+                                struct executor_format_object_header header;
+                                struct executor_format_object_field* fields =
+                                    NULL;
                                 size_t field_index;
 
                                 if (record->deleted) {
                                         continue;
                                 }
+                                if (!_read_object_record_header(
+                                        file->header.version, record->bytes,
+                                        record->length, &header) ||
+                                    !_decode_object_fields(
+                                        file->header.version, record->bytes, 0,
+                                        &header, schema, schema_count,
+                                        &fields)) {
+                                        _free_object_fields(fields,
+                                                            schema_count);
+                                        _free_schema_fields(schema,
+                                                            schema_count);
+                                        _free_object_log_records(records,
+                                                                 record_count);
+                                        return true;
+                                }
                                 for (field_index = 0;
-                                     field_index < executor_helper_read_u16(
-                                                       record->bytes + 14);
+                                     field_index < schema_count;
                                      field_index++) {
-                                        struct executor_format_object_field_view
-                                            field;
-                                        if (!executor_helper_read_object_field(
-                                                record->bytes, record->length,
-                                                &cursor, &field)) {
-                                                _free_object_log_records(
-                                                    records, record_count);
-                                                return true;
-                                        }
-                                        if (field.type_code ==
+                                        if (fields[field_index].type_code ==
                                                 EXECUTOR_FORMAT_TYPE_POINTER &&
                                             executor_helper_read_u32(
-                                                field.value) ==
+                                                fields[field_index].value) ==
                                                 target_class_id &&
                                             executor_helper_read_u64(
-                                                field.value + 4) ==
-                                                target_object_id &&
+                                                fields[field_index].value +
+                                                4) == target_object_id &&
                                             !(entry.class_id ==
                                                   target_class_id &&
                                               record->object_id ==
                                                   target_object_id)) {
+                                                _free_object_fields(
+                                                    fields, schema_count);
+                                                _free_schema_fields(
+                                                    schema, schema_count);
                                                 _free_object_log_records(
                                                     records, record_count);
                                                 return true;
                                         }
                                 }
+                                _free_object_fields(fields, schema_count);
                         }
+                        _free_schema_fields(schema, schema_count);
                         _free_object_log_records(records, record_count);
                         continue;
                 }
@@ -1172,6 +1273,7 @@ static enum EXECUTOR_RESULT _delete_object(
         struct executor_format_object_header header;
         uint8_t* old_segment = NULL;
         uint8_t* new_segment = NULL;
+        uint8_t* tombstone   = NULL;
         uint64_t object_id;
         size_t schema_count = 0;
         size_t class_index;
@@ -1195,19 +1297,13 @@ static enum EXECUTOR_RESULT _delete_object(
             entry.object_count == 0) {
                 goto done;
         }
-        if (file.header.version == EXECUTOR_FORMAT_VERSION_OBJECT_LOG) {
-                uint8_t tombstone[EXECUTOR_FORMAT_OBJECT_HEADER_SIZE];
-                struct executor_format_object_record record = {
-                    .object_id   = object_id,
-                    .flags       = EXECUTOR_FORMAT_OBJECT_FLAG_DELETED,
-                    .fields      = NULL,
-                    .field_count = 0,
-                };
+        if (file.header.version >= EXECUTOR_FORMAT_VERSION_OBJECT_LOG) {
                 size_t tombstone_length;
 
-                if (!executor_helper_create_object_record(
-                        tombstone, sizeof tombstone, &record,
-                        &tombstone_length)) {
+                if (!_serialize_object_fields(
+                        file.header.version, object_id,
+                        EXECUTOR_FORMAT_OBJECT_FLAG_DELETED, NULL, 0,
+                        &tombstone, &tombstone_length)) {
                         result = EXECUTOR_ERROR_STORAGE_FAILED;
                         goto done;
                 }
@@ -1248,6 +1344,7 @@ static enum EXECUTOR_RESULT _delete_object(
 done:
         free(old_segment);
         free(new_segment);
+        free(tombstone);
         _free_object_fields(unused_fields, schema_count);
         _free_schema_fields(schema, schema_count);
         return result;
@@ -1278,7 +1375,7 @@ static enum EXECUTOR_RESULT _find_objects(
                 _free_schema_fields(schema, schema_count);
                 return EXECUTOR_ERROR_STORAGE_FAILED;
         }
-        if (file.header.version == EXECUTOR_FORMAT_VERSION_OBJECT_LOG) {
+        if (file.header.version >= EXECUTOR_FORMAT_VERSION_OBJECT_LOG) {
                 size_t record_index;
 
                 if (!_collect_object_log_records(&file, &entry, &records,
@@ -1297,11 +1394,12 @@ static enum EXECUTOR_RESULT _find_objects(
                         bool matches = true;
 
                         if (record->deleted ||
-                            !executor_helper_read_object_header(
-                                record->bytes, record->length, &header) ||
-                            !_decode_object_fields(record->bytes, 0, &header,
-                                                   schema, schema_count,
-                                                   &fields)) {
+                            !_read_object_record_header(
+                                file.header.version, record->bytes,
+                                record->length, &header) ||
+                            !_decode_object_fields(
+                                file.header.version, record->bytes, 0, &header,
+                                schema, schema_count, &fields)) {
                                 if (!record->deleted) {
                                         result = EXECUTOR_ERROR_STORAGE_FAILED;
                                         goto done;
