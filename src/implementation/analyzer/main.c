@@ -54,17 +54,35 @@ static bool _accept(struct parser* p, enum TOKENIZER_TOKEN type) {
 static bool _fail(struct parser* p, enum analyzer_error_type type,
                   enum TOKENIZER_TOKEN expected) {
         const struct tokenizer_token* token = _peek(p);
+        size_t length      = token->lexeme == NULL ? 0 : token->length;
+        size_t copy_length = length < sizeof p->error->found_text - 1
+                                 ? length
+                                 : sizeof p->error->found_text - 1;
 
-        p->error->type     = type;
-        p->error->position = token->position;
-        p->error->found    = token->type;
-        p->error->expected = expected;
+        p->error->type              = type;
+        p->error->position          = token->position;
+        p->error->found             = token->type;
+        p->error->expected          = expected;
+        p->error->expected_kind     = ANALYZER_EXPECT_NONE;
+        p->error->found_text_length = length;
+        if (copy_length > 0 && token->lexeme != NULL) {
+                memcpy(p->error->found_text, token->lexeme, copy_length);
+        }
+        p->error->found_text[copy_length] = '\0';
         return false;
 }
 
 /** The current token does not fit, expected may be TOKENIZER_ILLEGAL. */
 static bool _unexpected(struct parser* p, enum TOKENIZER_TOKEN expected) {
         return _fail(p, ANALYZER_ERROR_UNEXPECTED_TOKEN, expected);
+}
+
+/** The current token must be one of a useful group of tokens. */
+static bool _unexpected_kind(struct parser* p,
+                             enum analyzer_expected_kind expected) {
+        _unexpected(p, TOKENIZER_ILLEGAL);
+        p->error->expected_kind = expected;
+        return false;
 }
 
 /** Allocation failed. */
@@ -250,7 +268,7 @@ static bool _parse_type(struct parser* p, struct analyzer_type* type) {
                         _advance(p);
                         return _take_name(p, &type->class_name);
                 default:
-                        return _unexpected(p, TOKENIZER_ILLEGAL);
+                        return _unexpected_kind(p, ANALYZER_EXPECT_TYPE);
         }
         _advance(p);
         return true;
@@ -307,7 +325,7 @@ static bool _parse_literal(struct parser* p, struct analyzer_value* value,
                 _advance(p);
                 if (_peek(p)->type != TOKENIZER_LITERAL_INTEGER &&
                     _peek(p)->type != TOKENIZER_LITERAL_FLOAT) {
-                        return _unexpected(p, TOKENIZER_ILLEGAL);
+                        return _unexpected_kind(p, ANALYZER_EXPECT_NUMBER);
                 }
         }
         token = _peek(p);
@@ -333,7 +351,7 @@ static bool _parse_literal(struct parser* p, struct analyzer_value* value,
                         source      = "false";
                         break;
                 default:
-                        return _unexpected(p, TOKENIZER_ILLEGAL);
+                        return _unexpected_kind(p, ANALYZER_EXPECT_LITERAL);
         }
         value->text = _dup_signed(source, negative);
         if (value->text == NULL) {
@@ -483,6 +501,14 @@ static struct analyzer_expression* _parse_primary(struct parser* p) {
                 _advance(p);
                 return node;
         }
+        if (token->type != TOKENIZER_LITERAL_INTEGER &&
+            token->type != TOKENIZER_LITERAL_FLOAT &&
+            token->type != TOKENIZER_LITERAL_TEXT &&
+            token->type != TOKENIZER_LITERAL_TRUE &&
+            token->type != TOKENIZER_LITERAL_FALSE) {
+                _unexpected_kind(p, ANALYZER_EXPECT_EXPRESSION);
+                return NULL;
+        }
         node = _node(p, ANALYZER_EXPRESSION_LITERAL);
         if (node == NULL) {
                 return NULL;
@@ -606,7 +632,7 @@ static struct analyzer_expression* _parse_comparison(struct parser* p,
         }
         if (!_comparison_operator(_peek(p)->type, &op)) {
                 if (required) {
-                        _unexpected(p, TOKENIZER_ILLEGAL);
+                        _unexpected_kind(p, ANALYZER_EXPECT_COMPARISON);
                         _expression_free(left);
                         return NULL;
                 }
@@ -688,7 +714,8 @@ static bool _parse_alter_class(struct parser* p,
                         }
                         return true;
                 default:
-                        return _unexpected(p, TOKENIZER_ILLEGAL);
+                        return _unexpected_kind(p,
+                                                ANALYZER_EXPECT_ALTER_ACTION);
         }
 }
 
@@ -749,7 +776,7 @@ static bool _parse_statement(struct parser* p, struct analyzer_statement* st) {
                         _advance(p);
                         break;
                 default:
-                        return _unexpected(p, TOKENIZER_ILLEGAL);
+                        return _unexpected_kind(p, ANALYZER_EXPECT_STATEMENT);
         }
         switch (head) {
                 case TOKENIZER_CREATE_CLASS:
@@ -849,6 +876,9 @@ struct analyzer_statement i_analyze(const struct tokenizer_tokens* tokens,
         error->position.offset     = 0;
         error->found               = TOKENIZER_END;
         error->expected            = TOKENIZER_ILLEGAL;
+        error->expected_kind       = ANALYZER_EXPECT_NONE;
+        error->found_text[0]       = '\0';
+        error->found_text_length   = 0;
 
         if (tokens->count < 2 ||
             tokens->items[tokens->count - 1].type != TOKENIZER_END) {

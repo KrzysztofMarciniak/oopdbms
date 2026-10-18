@@ -217,11 +217,15 @@ value       <literal> | -<number> | <class>.<id>
 
 `*` and `/` bind more tightly than `+` and `-`. Chains are left-associative. Field lists, argument lists, `CALL` values, and assignment lists require at least one entry. Parentheses and unary minus may nest up to 128 levels.
 
-Analyzer errors describe what was expected and what was found. For example:
+Analyzer errors include the offending token's source spelling and, where useful,
+the alternatives accepted at that point. Long token spellings are truncated in
+the diagnostic; locations continue to use the token's argument index and byte
+offset. For example:
 
 ```text
 analyzer: expected ')' but found end of input
-analyzer: unexpected a name at argument 1, offset 0
+analyzer: unexpected 'Person' (a name); expected a command (CREATE, DROP, ALTER, CALL, NEW, FIND, SET, DELETE, LIST, or DESCRIBE) at argument 1, offset 0
+analyzer: unexpected 'unknown' (a name); expected a type (integer, float, text, bool, or pointer) at argument 1, offset 25
 ```
 
 ### File check

@@ -8,6 +8,8 @@
 
 #include "interface/tokenizer/token.h"
 
+#define ANALYZER_ERROR_TOKEN_TEXT_MAX 64
+
 /**
  * @brief What went wrong while analyzing.
  */
@@ -25,6 +27,20 @@ enum analyzer_error_type {
 };
 
 /**
+ * @brief A useful class of tokens that may satisfy a parser position.
+ */
+enum analyzer_expected_kind {
+        ANALYZER_EXPECT_NONE = 0,
+        ANALYZER_EXPECT_TYPE,
+        ANALYZER_EXPECT_LITERAL,
+        ANALYZER_EXPECT_NUMBER,
+        ANALYZER_EXPECT_EXPRESSION,
+        ANALYZER_EXPECT_COMPARISON,
+        ANALYZER_EXPECT_ALTER_ACTION,
+        ANALYZER_EXPECT_STATEMENT
+};
+
+/**
  * @brief Analyzer result.
  */
 struct analyzer_error {
@@ -36,6 +52,12 @@ struct analyzer_error {
         enum TOKENIZER_TOKEN found;
         /** The token that was expected, TOKENIZER_ILLEGAL if several fit. */
         enum TOKENIZER_TOKEN expected;
+        /** A meaningful set of tokens expected at this position, if known. */
+        enum analyzer_expected_kind expected_kind;
+        /** Raw token text, truncated to fit when necessary. */
+        char found_text[ANALYZER_ERROR_TOKEN_TEXT_MAX];
+        /** Original raw token length, before truncation. */
+        size_t found_text_length;
 };
 
 /**

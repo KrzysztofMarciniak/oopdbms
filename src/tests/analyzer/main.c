@@ -74,6 +74,39 @@ static void _fails(const char* line, enum TOKENIZER_TOKEN expected,
         i_analyzer_free(&statement);
 }
 
+/** Check the additional context retained for an analyzer diagnostic. */
+static void _diagnostic(const char* line,
+                        enum analyzer_expected_kind expected_kind,
+                        const char* found_text) {
+        struct analyzer_error error;
+        struct analyzer_statement statement = _analyze(line, &error);
+
+        CHECK(error.type == ANALYZER_ERROR_UNEXPECTED_TOKEN, line);
+        CHECK(error.expected_kind == expected_kind, line);
+        CHECK(_same(error.found_text, found_text), line);
+        CHECK(statement.kind == ANALYZER_INVALID, line);
+        i_analyzer_free(&statement);
+}
+
+static void _test_diagnostic_truncation(void) {
+        char line[ANALYZER_ERROR_TOKEN_TEXT_MAX + 20];
+        size_t length = sizeof line - 1;
+        struct analyzer_error error;
+        struct analyzer_statement statement;
+
+        memset(line, 'x', length);
+        line[length] = '\0';
+        statement    = _analyze(line, &error);
+        CHECK(error.type == ANALYZER_ERROR_UNEXPECTED_TOKEN,
+              "diagnostic text truncation");
+        CHECK(error.found_text_length == length, "diagnostic original length");
+        CHECK(strlen(error.found_text) == ANALYZER_ERROR_TOKEN_TEXT_MAX - 1,
+              "diagnostic copied length");
+        CHECK(statement.kind == ANALYZER_INVALID,
+              "diagnostic truncated statement");
+        i_analyzer_free(&statement);
+}
+
 static void _test_classes(void) {
         struct analyzer_statement st =
             _ok("CREATE CLASS Employee EXTENDS Person IMPLEMENTS Named, Tagged "
@@ -345,6 +378,17 @@ static void _test_errors(void) {
                19);
         _fails("CREATE FUNCTION A.f (x integer) RETURNS integer AS (1 + 2",
                TOKENIZER_RPAREN, TOKENIZER_END, 0);
+        _diagnostic("Person", ANALYZER_EXPECT_STATEMENT, "Person");
+        _diagnostic("CREATE CLASS Book (price unknown)", ANALYZER_EXPECT_TYPE,
+                    "unknown");
+        _diagnostic("NEW Book (price = -x)", ANALYZER_EXPECT_NUMBER, "x");
+        _diagnostic("NEW Book (price = )", ANALYZER_EXPECT_LITERAL, ")");
+        _diagnostic("CREATE FUNCTION A.f (x integer) RETURNS integer AS )",
+                    ANALYZER_EXPECT_EXPRESSION, ")");
+        _diagnostic("FIND Book WHERE price", ANALYZER_EXPECT_COMPARISON, "");
+        _diagnostic("ALTER CLASS Book invalid", ANALYZER_EXPECT_ALTER_ACTION,
+                    "invalid");
+        _test_diagnostic_truncation();
 
         st = i_analyze(&none, &error);
         CHECK(error.type == ANALYZER_ERROR_EMPTY, "empty input");
