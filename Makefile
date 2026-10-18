@@ -17,6 +17,10 @@ SOURCES := $(shell find src -type f -name '*.c' \
 	-not -path 'src/tests/*')
 
 TEST_SOURCES := $(shell find src/tests -type f -name '*.c')
+TEST_RUNNER_SOURCE := src/tests/test_runner.c
+TEST_OBJECTS := $(patsubst src/tests/%.c,$(BUILD_DIR)/tests/%.o,\
+		$(filter-out $(TEST_RUNNER_SOURCE),$(TEST_SOURCES)))
+TEST_RUNNER := $(BUILD_DIR)/tests/test_runner
 LIB_SOURCES := $(filter-out src/main.c,$(SOURCES))
 HEADERS := $(shell find src -type f -name '*.h')
 OBJECTS := $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(SOURCES))
@@ -91,12 +95,18 @@ run: build
 	$(BUILD_DIR)/$(TARGET)
 
 test: format
-	mkdir -p $(BUILD_DIR)
-	@for t in $(TEST_SOURCES); do \
-		name=$$(echo $$t | tr '/' '_'); \
-		$(CC) $(CFLAGS) -Isrc $(LIB_SOURCES) $$t -o $(BUILD_DIR)/$$name || exit 1; \
-		$(BUILD_DIR)/$$name || exit 1; \
-	done
+	$(MAKE) --no-print-directory $(TEST_RUNNER)
+	$(TEST_RUNNER) $(TEST_ARGS)
+
+$(TEST_RUNNER): $(TEST_RUNNER_SOURCE) $(TEST_OBJECTS) $(LIB_SOURCES) $(HEADERS)
+	mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Isrc $(LIB_SOURCES) $(TEST_OBJECTS) $(TEST_RUNNER_SOURCE) -o $@
+
+$(BUILD_DIR)/tests/%.o: src/tests/%.c
+	mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Isrc \
+		-Dmain=test_$(subst -,_,$(subst /,_,$(basename $(patsubst src/tests/%,%,$<)))) \
+		-c $< -o $@
 
 docs:
 	mkdir -p $(DOCS_DIR)

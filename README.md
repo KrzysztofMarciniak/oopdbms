@@ -140,6 +140,11 @@ make format                  # Run clang-format on all sources
 make clean                   # Remove build/
 ```
 
+`make test TEST_ARGS=--list` lists the available test suites. Run one suite
+with `make test TEST_ARGS="--suite analyzer"`. The unified terminal dashboard
+groups results, reports pass/fail totals, and uses plain text when redirected
+or when `NO_COLOR` is set.
+
 The project builds with C99 and Make; `make`, `make release`, and
 `make quick_start` also run `clang-format`. `make install` requires the
 `install` utility, and `make docs` additionally requires Doxygen.
@@ -250,10 +255,12 @@ src/interface/<name>/              Public interface headers for a step
 src/implementation/<name>/         Implementation of a step
 src/implementation/executor/       Focused executor modules; see its README
 src/error/<name>/                  Error types and printing
-src/tests/<name>/*.c                Test programs for a step
+src/tests/test_runner.c            Unified terminal test runner
+src/tests/<name>/*.c               Test suites for a step
 ```
 
-Tests print `N checks, M failures` and exit with a non-zero status if any check fails.
+Test suites print `N checks, M failures`; `make test` exits non-zero if any
+suite fails.
 
 ## Database file format
 

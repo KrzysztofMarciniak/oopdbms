@@ -54,10 +54,22 @@ implemented interfaces.
 
 ## Testing
 
-Executor tests live in `src/tests/executor/`. Format tests read the generated
-database directly and check bytes against the root README specification.
-Run the complete test suite from the repository root:
+Tests live in `src/tests/` and run together through one terminal dashboard.
+Format tests read the generated database directly and check bytes against the
+root README specification. Run the complete test suite from the repository
+root:
 
 ```sh
 make test
 ```
+
+To list available suites or run one suite, use:
+
+```sh
+make test TEST_ARGS=--list
+make test TEST_ARGS="--suite analyzer"
+```
+
+The runner displays colored status in interactive terminals and plain text
+when output is redirected or `NO_COLOR` is set. It returns a non-zero status if
+any selected suite fails.
