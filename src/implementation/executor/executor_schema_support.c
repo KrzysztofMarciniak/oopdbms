@@ -265,7 +265,9 @@ bool _class_or_descendant_has_objects(struct executor_format_file* file,
 
                         if (cursor == class_id &&
                             (candidate.object_count != 0 ||
-                             candidate.data_length != 0)) {
+                             (file->header.version ==
+                                  EXECUTOR_FORMAT_VERSION_CONTIGUOUS &&
+                              candidate.data_length != 0))) {
                                 return true;
                         }
                         if (!_class_entry_by_id(file, cursor, &current) ||

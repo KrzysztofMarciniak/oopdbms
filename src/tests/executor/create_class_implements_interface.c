@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "implementation/executor/helper/format_types.h"
 #include "interface/executor/executor.h"
 #include "interface/storage/database.h"
 
@@ -130,7 +131,8 @@ static void _test_create_class_implements_interface(void) {
                 return;
         }
         CHECK(_u16(bytes + 8) == 1 && _u16(bytes + 10) == 1 &&
-                  _u16(bytes + 12) == 0 && _u16(bytes + 14) == 0,
+                  _u16(bytes + 12) == 0 &&
+                  _u16(bytes + 14) == EXECUTOR_FORMAT_VERSION_CURRENT,
               "header stores one interface, one class, and no functions");
 
         interface_table_offset = _u64(bytes + 16);

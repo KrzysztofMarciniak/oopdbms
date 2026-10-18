@@ -15,14 +15,15 @@ bool executor_helper_create_header(
     uint8_t* output, size_t capacity,
     const struct executor_format_header* header) {
         if (output == NULL || header == NULL ||
-            capacity < EXECUTOR_FORMAT_HEADER_SIZE) {
+            capacity < EXECUTOR_FORMAT_HEADER_SIZE ||
+            header->version > EXECUTOR_FORMAT_VERSION_CURRENT) {
                 return false;
         }
         memcpy(output, MAGIC, sizeof MAGIC);
         executor_helper_write_u16(output + 8, header->interface_count);
         executor_helper_write_u16(output + 10, header->class_count);
         executor_helper_write_u16(output + 12, header->function_count);
-        executor_helper_write_u16(output + 14, 0);
+        executor_helper_write_u16(output + 14, header->version);
         return true;
 }
 
@@ -30,12 +31,15 @@ bool executor_helper_read_header(const uint8_t* bytes, size_t length,
                                  struct executor_format_header* header) {
         if (bytes == NULL || header == NULL ||
             length < EXECUTOR_FORMAT_HEADER_SIZE ||
-            memcmp(bytes, MAGIC, sizeof MAGIC) != 0 ||
-            executor_helper_read_u16(bytes + 14) != 0) {
+            memcmp(bytes, MAGIC, sizeof MAGIC) != 0) {
                 return false;
         }
         header->interface_count = executor_helper_read_u16(bytes + 8);
         header->class_count     = executor_helper_read_u16(bytes + 10);
         header->function_count  = executor_helper_read_u16(bytes + 12);
+        header->version         = executor_helper_read_u16(bytes + 14);
+        if (header->version > EXECUTOR_FORMAT_VERSION_CURRENT) {
+                return false;
+        }
         return true;
 }

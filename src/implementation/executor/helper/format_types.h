@@ -17,10 +17,15 @@ enum EXECUTOR_FORMAT_TYPE {
         EXECUTOR_FORMAT_TYPE_POINTER
 };
 
+#define EXECUTOR_FORMAT_VERSION_CONTIGUOUS 0u
+#define EXECUTOR_FORMAT_VERSION_OBJECT_LOG 1u
+#define EXECUTOR_FORMAT_VERSION_CURRENT EXECUTOR_FORMAT_VERSION_OBJECT_LOG
+
 struct executor_format_header {
         uint16_t interface_count;
         uint16_t class_count;
         uint16_t function_count;
+        uint16_t version;
 };
 
 struct executor_format_section {

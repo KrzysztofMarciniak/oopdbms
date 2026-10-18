@@ -522,6 +522,7 @@ bool database_init_format_mode(struct database* db, const char* path,
         db->read_only   = read_only;
 
         if (created) {
+                header.version = EXECUTOR_FORMAT_VERSION_CURRENT;
                 if (!executor_helper_create_header(
                         header_bytes, sizeof header_bytes, &header) ||
                     !executor_helper_create_metatable(

@@ -70,6 +70,25 @@ bool executor_format_file_read(const struct executor_format_file* file,
                fread(output, 1, length, file->database->fp) == length;
 }
 
+bool executor_format_file_write(struct executor_format_file* file,
+                                uint64_t offset, const void* bytes,
+                                size_t length) {
+        if (file == NULL || file->database == NULL ||
+            file->database->fp == NULL || file->database->read_only ||
+            (length != 0 && bytes == NULL) ||
+            !executor_helper_range_valid(file->size, offset, length) ||
+            offset > LONG_MAX ||
+            fseek(file->database->fp, (long)offset, SEEK_SET) != 0 ||
+            (length != 0 &&
+             fwrite(bytes, 1, length, file->database->fp) != length)) {
+                return false;
+        }
+        if (length != 0) {
+                database_mark_modified(file->database);
+        }
+        return true;
+}
+
 bool executor_format_file_append(struct executor_format_file* file,
                                  const void* bytes, size_t length,
                                  uint64_t* offset) {

@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "implementation/executor/helper/format_types.h"
 #include "interface/executor/executor.h"
 #include "interface/storage/database.h"
 
@@ -117,9 +118,9 @@ static void _test_create_class_bytes(void) {
                 return;
         }
         CHECK(_u16(bytes + 8) == 0 && _u16(bytes + 10) == 1 &&
-                  _u16(bytes + 12) == 0 && _u16(bytes + 14) == 0,
-              "16-byte header stores interface, class, function, and reserved "
-              "counts");
+                  _u16(bytes + 12) == 0 &&
+                  _u16(bytes + 14) == EXECUTOR_FORMAT_VERSION_CURRENT,
+              "header stores the current format version and entry counts");
 
         class_table_offset = _u64(bytes + 32);
         class_table_length = _u64(bytes + 40);

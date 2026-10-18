@@ -22,8 +22,12 @@ struct executor_format_file {
 
 bool executor_format_file_load(struct database* database,
                                struct executor_format_file* file);
+bool executor_format_file_migrate(struct database* database);
 bool executor_format_file_read(const struct executor_format_file* file,
                                uint64_t offset, void* output, size_t length);
+bool executor_format_file_write(struct executor_format_file* file,
+                                uint64_t offset, const void* bytes,
+                                size_t length);
 bool executor_format_file_append(struct executor_format_file* file,
                                  const void* bytes, size_t length,
                                  uint64_t* offset);

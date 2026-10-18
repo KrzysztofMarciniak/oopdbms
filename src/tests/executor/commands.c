@@ -9,10 +9,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "implementation/executor/helper/format_types.h"
 #include "interface/executor/executor.h"
 #include "interface/storage/database.h"
 
 #define TEST_FILE "build/executor-commands-test.oopdb"
+#define MIGRATION_TEST_FILE "build/legacy-migration-test.oopdb"
 
 static int checks   = 0;
 static int failures = 0;
@@ -40,8 +42,8 @@ static uint64_t _u64(const uint8_t* bytes) {
         return (uint64_t)_u32(bytes) | ((uint64_t)_u32(bytes + 4) << 32);
 }
 
-static uint8_t* _read_file(size_t* file_size) {
-        FILE* file = fopen(TEST_FILE, "rb");
+static uint8_t* _read_file_from(const char* path, size_t* file_size) {
+        FILE* file = fopen(path, "rb");
         long length;
         uint8_t* bytes;
 
@@ -62,6 +64,178 @@ static uint8_t* _read_file(size_t* file_size) {
         fclose(file);
         *file_size = (size_t)length;
         return bytes;
+}
+
+static uint8_t* _read_file(size_t* file_size) {
+        return _read_file_from(TEST_FILE, file_size);
+}
+
+static void _write_u64(uint8_t* bytes, uint64_t value) {
+        size_t i;
+
+        for (i = 0; i < 8; i++) {
+                bytes[i] = (uint8_t)(value >> (i * 8));
+        }
+}
+
+static void _test_legacy_migration(void) {
+        struct database db;
+        struct analyzer_field field = {
+            .name = "name",
+            .type = {.kind = ANALYZER_TYPE_TEXT},
+        };
+        struct analyzer_value old_value = {
+            .kind = ANALYZER_VALUE_TEXT,
+            .text = "legacy",
+        };
+        struct analyzer_value new_value = {
+            .kind = ANALYZER_VALUE_TEXT,
+            .text = "migrated",
+        };
+        struct analyzer_assignment assignment = {
+            .field = "name",
+            .value = old_value,
+        };
+        struct analyzer_statement statement = {
+            .kind   = ANALYZER_CREATE_CLASS,
+            .group  = ANALYZER_GROUP_SCHEMA,
+            .name   = "Legacy",
+            .fields = {.items = &field, .count = 1, .capacity = 1},
+        };
+        size_t file_size = 0;
+        uint8_t* bytes;
+        uint64_t table_offset;
+        uint64_t entry_offset;
+        uint64_t node_offset;
+        uint64_t record_offset;
+        uint32_t record_length;
+        FILE* file;
+
+        remove(MIGRATION_TEST_FILE);
+        CHECK(database_init_format(&db, MIGRATION_TEST_FILE, true),
+              "initialize legacy migration fixture");
+        CHECK(i_execute(&db, &statement) == EXECUTOR_OK,
+              "create class before legacy migration");
+        statement = (struct analyzer_statement){
+            .kind  = ANALYZER_NEW,
+            .group = ANALYZER_GROUP_OBJECT,
+            .name  = "Legacy",
+            .assignments =
+                {
+                    .items    = &assignment,
+                    .count    = 1,
+                    .capacity = 1,
+                },
+        };
+        CHECK(i_execute(&db, &statement) == EXECUTOR_OK,
+              "create object before legacy migration");
+        database_close(&db);
+
+        bytes = _read_file_from(MIGRATION_TEST_FILE, &file_size);
+        CHECK(bytes != NULL, "read version 1 migration fixture");
+        if (bytes == NULL) {
+                remove(MIGRATION_TEST_FILE);
+                return;
+        }
+        table_offset = _u64(bytes + 32);
+        entry_offset = table_offset;
+        node_offset  = _u64(bytes + entry_offset + 16);
+        if (node_offset <= file_size && file_size - (size_t)node_offset >= 12) {
+                record_length = _u32(bytes + node_offset + 8);
+                record_offset = node_offset + 12;
+        } else {
+                record_length = 0;
+                record_offset = 0;
+        }
+        CHECK(record_length >= 16 && record_offset <= file_size &&
+                  record_length <= file_size - (size_t)record_offset,
+              "fixture contains a valid object-log record");
+        if (record_length < 16 || record_offset > file_size ||
+            record_length > file_size - (size_t)record_offset) {
+                free(bytes);
+                remove(MIGRATION_TEST_FILE);
+                return;
+        }
+        _write_u64(bytes + entry_offset + 16, record_offset);
+        _write_u64(bytes + entry_offset + 24, record_length);
+        put_u16_le(bytes + 14, EXECUTOR_FORMAT_VERSION_CONTIGUOUS);
+        file = fopen(MIGRATION_TEST_FILE, "r+b");
+        CHECK(file != NULL, "open legacy migration fixture for conversion");
+        if (file == NULL) {
+                free(bytes);
+                remove(MIGRATION_TEST_FILE);
+                return;
+        }
+        {
+                bool converted = fseek(file, 0, SEEK_SET) == 0;
+                if (converted) {
+                        converted =
+                            fwrite(bytes, 1, file_size, file) == file_size;
+                }
+                if (fclose(file) != 0) {
+                        converted = false;
+                }
+                CHECK(converted,
+                      "convert fixture to version 0 contiguous data");
+        }
+        free(bytes);
+
+        CHECK(database_init_format(&db, MIGRATION_TEST_FILE, false),
+              "open legacy database for migration");
+        assignment.value = new_value;
+        statement        = (struct analyzer_statement){
+            .kind  = ANALYZER_NEW,
+            .group = ANALYZER_GROUP_OBJECT,
+            .name  = "Legacy",
+            .assignments =
+                {
+                    .items    = &assignment,
+                    .count    = 1,
+                    .capacity = 1,
+                },
+        };
+        CHECK(i_execute(&db, &statement) == EXECUTOR_OK,
+              "first write migrates legacy database and appends an object");
+        database_close(&db);
+
+        bytes = _read_file_from(MIGRATION_TEST_FILE, &file_size);
+        CHECK(bytes != NULL, "read migrated database");
+        if (bytes != NULL) {
+                table_offset = _u64(bytes + 32);
+                entry_offset = table_offset;
+                node_offset  = _u64(bytes + entry_offset + 16);
+                CHECK(_u16(bytes + 14) == EXECUTOR_FORMAT_VERSION_OBJECT_LOG,
+                      "migration upgrades the format version");
+                CHECK(_u64(bytes + entry_offset + 32) == 2,
+                      "migration preserves and increments the live count");
+                CHECK(node_offset <= file_size &&
+                          file_size - (size_t)node_offset >= 12 &&
+                          _u64(bytes + node_offset) != 0,
+                      "migrated log links the new version to the old record");
+                if (node_offset <= file_size &&
+                    file_size - (size_t)node_offset >= 12) {
+                        record_length = _u32(bytes + node_offset + 8);
+                        record_offset = node_offset + 12;
+                        CHECK(record_length >= 16 &&
+                                  record_offset <= file_size &&
+                                  record_length <=
+                                      file_size - (size_t)record_offset &&
+                                  _u64(bytes + record_offset + 4) == 2,
+                              "newest migrated log entry has the next ID");
+                }
+                free(bytes);
+        }
+        CHECK(database_init_format_mode(&db, MIGRATION_TEST_FILE, false, true),
+              "reopen migrated database read-only");
+        statement = (struct analyzer_statement){
+            .kind  = ANALYZER_FIND,
+            .group = ANALYZER_GROUP_OBJECT,
+            .name  = "Legacy",
+        };
+        CHECK(i_execute(&db, &statement) == EXECUTOR_OK,
+              "read migrated and newly written objects");
+        database_close(&db);
+        remove(MIGRATION_TEST_FILE);
 }
 
 static enum EXECUTOR_RESULT _execute(struct database* db,
@@ -412,8 +586,10 @@ static void _object_and_function_commands(struct database* db) {
         size_t file_size = 0;
         uint8_t* bytes;
         uint64_t class_table_offset;
+        uint64_t initial_class_table_offset = 0;
         uint64_t item_data_offset;
         uint64_t item_data_length;
+        uint32_t item_record_length;
         size_t cursor;
 
         statement.fields.items    = target_fields;
@@ -429,6 +605,13 @@ static void _object_and_function_commands(struct database* db) {
         CHECK(_execute(db, ANALYZER_CREATE_CLASS, ANALYZER_GROUP_SCHEMA, "Item",
                        &statement) == EXECUTOR_OK,
               "create typed object class");
+
+        bytes = _read_file(&file_size);
+        CHECK(bytes != NULL, "read class table before object writes");
+        if (bytes != NULL) {
+                initial_class_table_offset = _u64(bytes + 32);
+                free(bytes);
+        }
 
         statement                      = (struct analyzer_statement){0};
         statement.assignments.items    = target_assignments;
@@ -490,16 +673,27 @@ static void _object_and_function_commands(struct database* db) {
                 class_table_offset = _u64(bytes + 32);
                 item_data_offset   = _u64(bytes + class_table_offset + 48 + 16);
                 item_data_length   = _u64(bytes + class_table_offset + 48 + 24);
+                item_record_length =
+                    item_data_offset <= file_size &&
+                            file_size - (size_t)item_data_offset >= 12
+                        ? _u32(bytes + item_data_offset + 8)
+                        : 0;
                 CHECK(_u64(bytes + class_table_offset + 48 + 32) == 1,
                       "class table object count matches stored record");
-                CHECK(item_data_length > 16 && item_data_offset <= file_size &&
-                          item_data_length <= file_size - item_data_offset,
-                      "object segment range is persisted");
-                if (item_data_length > 16 && item_data_offset <= file_size &&
-                    item_data_length <= file_size - item_data_offset) {
-                        const uint8_t* record = bytes + item_data_offset;
+                CHECK(class_table_offset == initial_class_table_offset,
+                      "object writes update the existing class table");
+                CHECK(item_data_length > 0 && item_data_offset <= file_size &&
+                          file_size - (size_t)item_data_offset >= 12 &&
+                          item_record_length >= 16 &&
+                          item_record_length <=
+                              file_size - (size_t)item_data_offset - 12,
+                      "object log head and record range are persisted");
+                if (item_record_length >= 16 && item_data_offset <= file_size &&
+                    file_size - (size_t)item_data_offset >=
+                        12 + item_record_length) {
+                        const uint8_t* record = bytes + item_data_offset + 12;
                         CHECK(_u64(record + 4) == 1 &&
-                                  _u32(record) == item_data_length &&
+                                  _u32(record) == item_record_length &&
                                   _u16(record + 14) == 5,
                               "object header stores ID, length, and field "
                               "count");
@@ -585,9 +779,10 @@ static void _object_and_function_commands(struct database* db) {
                      class_index++) {
                         const uint8_t* class_entry =
                             bytes + class_table_offset + class_index * 48;
-                        CHECK(_u64(class_entry + 24) == 0 &&
-                                  _u64(class_entry + 32) == 0,
-                              "DELETE updates object count and data length");
+                        CHECK(_u64(class_entry + 32) == 0 &&
+                                  _u64(class_entry + 24) > 0,
+                              "DELETE appends tombstone records and clears "
+                              "object count");
                         CHECK(_u64(class_entry + 40) == 2,
                               "DELETE preserves the next object ID");
                 }
@@ -639,6 +834,7 @@ int main(void) {
         _schema_constraints(&db);
         _object_and_function_commands(&db);
         database_close(&db);
+        _test_legacy_migration();
         CHECK(database_init_format_mode(&db, TEST_FILE, false, true),
               "open existing database in read-only mode");
         statement.kind  = ANALYZER_LIST_CLASSES;

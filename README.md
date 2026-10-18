@@ -282,9 +282,9 @@ The header is 16 bytes:
 | 8 | 2 | `interface_count` | Number of interface table entries (`u16`) |
 | 10 | 2 | `class_count` | Number of class table entries (`u16`) |
 | 12 | 2 | `function_count` | Number of function table entries (`u16`) |
-| 14 | 2 | `reserved` | Reserved; write as zero (`u16`) |
+| 14 | 2 | `format_version` | `0` for contiguous object segments, `1` for append-only object logs (`u16`) |
 
-The three counts are each unsigned 16-bit integers, so each metadata table can contain at most 65,535 entries. The reserved field is included for future use and must be zero in this layout.
+The three counts are each unsigned 16-bit integers, so each metadata table can contain at most 65,535 entries. Version `0` is the original contiguous-segment format. New databases use version `1`; version `0` files remain readable and are migrated on their first mutating command. Read-only access does not migrate a legacy file. Other format versions are rejected.
 
 ### Metatable
 
@@ -338,8 +338,8 @@ Each class table entry is 48 bytes:
 | `class_id` | 4 | Stable class identifier (`u32`) |
 | `definition_offset` | 8 | Absolute offset of the class definition (`u64`) |
 | `definition_length` | 4 | Length of the class definition (`u32`) |
-| `data_offset` | 8 | Absolute offset of the class data segment (`u64`) |
-| `data_length` | 8 | Length of the class data segment in bytes (`u64`) |
+| `data_offset` | 8 | Version 0: absolute offset of the contiguous class data segment. Version 1: offset of the newest object-log node; zero means no history (`u64`) |
+| `data_length` | 8 | Version 0: segment length in bytes. Version 1: total byte length of the class's object-log chain (`u64`) |
 | `object_count` | 8 | Number of live objects in the class (`u64`) |
 | `next_object_id` | 8 | Next object ID to allocate for this class (`u64`) |
 
@@ -407,9 +407,21 @@ A function definition contains, in order:
 
 Each parameter descriptor contains `name_length` (`u16`), a type descriptor (one byte, plus a `u32` target class ID for `pointer`), then `name_length` bytes containing the UTF-8 parameter name. Function expressions are stored as source text, such as `salary * (1 + percent / 100)`.
 
-### Class data segments
+### Class data and object logs
 
-Class data segments follow the metadata definitions. A class table entry's `data_offset` and `data_length` identify its segment. The segment contains object records belonging to that class.
+In version `0`, class data is a contiguous segment of object records. The class table entry's `data_offset` and `data_length` identify that segment.
+
+Version `1` stores each object version in an append-only per-class log. Each node has a 12-byte header followed by one object record:
+
+| Field | Size | Description |
+|---|---:|---|
+| `previous_offset` | 8 | Absolute offset of the previous (older) node; zero ends the chain (`u64`) |
+| `record_length` | 4 | Length of the following object record, excluding this node header (`u32`) |
+| `record` | `record_length` | One object record |
+
+The class table's `data_offset` points to the newest node. `data_length` is the total size of all nodes in that class's chain, including node headers. On `NEW` and `SET`, OOPDB appends the new record version; on `DELETE`, it appends a tombstone record with the deleted flag set and no fields. The first record found for an object ID while following the chain is its current version; a tombstone means the object is absent. `object_count` tracks live objects, while `next_object_id` continues to increase. This avoids copying all existing records on every object mutation, but historical versions and tombstones remain in the file, so the log grows with writes. Object mutations update the affected class-table entry at its existing table offset rather than appending another copy of the full class table.
+
+The version `1` log node header is separate from the object record header below. In a tombstone, the record header's `field_count` is zero and its `flags` bit 0 is set.
 
 Each object record begins with a 16-byte header:
 
@@ -417,7 +429,7 @@ Each object record begins with a 16-byte header:
 |---|---:|---|
 | `record_length` | 4 | Total record length, including this header (`u32`) |
 | `object_id` | 8 | Object ID, unique within its class (`u64`) |
-| `flags` | 2 | Object flags (`u16`); zero when unused |
+| `flags` | 2 | Version 0: zero. Version 1: bit 0 marks a deleted-object tombstone; other bits are reserved (`u16`) |
 | `field_count` | 2 | Number of field records in the object (`u16`) |
 
 The object header is followed by `field_count` field records. Each field record contains:
@@ -435,7 +447,7 @@ Object IDs are scoped to their class, which matches command values such as `Book
 
 ### Physical arrangement
 
-A convenient physical arrangement is:
+A convenient physical arrangement for version `0` is:
 
 ```text
 +----------------------------------+
@@ -465,4 +477,4 @@ A convenient physical arrangement is:
 
 This is the recommended ordering, not a substitute for following the offsets recorded in the metatable and metadata tables. Sections must not overlap, and every offset/length pair must fit entirely within the file. Readers must validate lengths before allocating memory or seeking. Text is length-prefixed UTF-8, not NUL-terminated.
 
-A class's data segment contains its current object records. When a mutation changes a variable-length record or segment, the implementation must keep the segment lengths and offsets consistent with the class table. An object index or secondary field indexes may be added later; they are not required by this layout, so `FIND` can initially scan the relevant class data segment.
+Version `1` appends object-log nodes to the file and updates the active class table entry in place to point to the newest node. Replaced versions remain in the chain and are ignored by reads; no full class segment or full class-table copy is appended on each insert or update. Metadata tables and definitions continue to be located only through the active offsets in the metatable and table entries. Readers must validate node offsets, record lengths, and links before following them. An object index or secondary field indexes may be added later; `FIND` initially scans the class's object log and resolves the newest version for each object ID.

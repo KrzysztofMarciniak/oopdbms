@@ -35,7 +35,7 @@ static int failures;
 static void test_primitives_and_header(void) {
         const uint8_t expected_header[] = {'O', 'O', 'P', 'D', 'B', 0, 0, 0,
                                            1,   0,   2,   0,   3,   0, 0, 0};
-        struct executor_format_header header  = {1, 2, 3};
+        struct executor_format_header header  = {1, 2, 3, 0};
         struct executor_format_header decoded = {0};
         uint8_t bytes[16]                     = {0};
 
@@ -58,8 +58,15 @@ static void test_primitives_and_header(void) {
         CHECK(!executor_helper_read_header(bytes, 15, &decoded),
               "truncated header is rejected");
         bytes[14] = 1;
+        CHECK(executor_helper_read_header(bytes, sizeof bytes, &decoded) &&
+                  decoded.version == EXECUTOR_FORMAT_VERSION_OBJECT_LOG,
+              "known object-log format version is accepted");
+        bytes[14] = 2;
         CHECK(!executor_helper_read_header(bytes, sizeof bytes, &decoded),
-              "nonzero reserved header field is rejected");
+              "unsupported format version is rejected");
+        header.version = 2;
+        CHECK(!executor_helper_create_header(bytes, sizeof bytes, &header),
+              "unsupported format version cannot be written");
 }
 
 static void test_field_and_value_encodings(void) {
@@ -212,7 +219,7 @@ static void test_definitions_and_object_records(void) {
 }
 
 static void test_metadata_layout_validation(void) {
-        const struct executor_format_header header = {0, 1, 0};
+        const struct executor_format_header header = {0, 1, 0, 0};
         struct executor_format_metatable metatable = {
             .classes = {.offset = 64, .length = 48},
         };

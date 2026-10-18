@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "implementation/executor/helper/format_types.h"
 #include "interface/executor/executor.h"
 #include "interface/storage/database.h"
 
@@ -150,7 +151,8 @@ static void _test_pointer_parameter(void) {
                 return;
         }
         CHECK(_u16(bytes + 8) == 0 && _u16(bytes + 10) == 2 &&
-                  _u16(bytes + 12) == 1 && _u16(bytes + 14) == 0,
+                  _u16(bytes + 12) == 1 &&
+                  _u16(bytes + 14) == EXECUTOR_FORMAT_VERSION_CURRENT,
               "header stores two classes, one function, and no interfaces");
 
         class_table_offset    = _u64(bytes + 32);

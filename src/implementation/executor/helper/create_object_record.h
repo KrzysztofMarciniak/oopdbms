@@ -13,6 +13,8 @@
 #include "implementation/executor/helper/format_types.h"
 
 #define EXECUTOR_FORMAT_OBJECT_HEADER_SIZE 16u
+#define EXECUTOR_FORMAT_OBJECT_LOG_NODE_HEADER_SIZE 12u
+#define EXECUTOR_FORMAT_OBJECT_FLAG_DELETED 1u
 
 struct executor_format_object_header {
         uint32_t record_length;

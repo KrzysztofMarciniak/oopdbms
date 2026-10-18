@@ -593,7 +593,9 @@ static enum EXECUTOR_RESULT _drop_class(
             !_class_index_by_name(&file, statement->name, &index, &target)) {
                 return EXECUTOR_ERROR_BAD_STATEMENT;
         }
-        if (target.object_count != 0 || target.data_length != 0 ||
+        if (target.object_count != 0 ||
+            (file.header.version == EXECUTOR_FORMAT_VERSION_CONTIGUOUS &&
+             target.data_length != 0) ||
             _class_has_external_references(&file, &target) ||
             !_remove_class_table_entry(&file, index)) {
                 return EXECUTOR_ERROR_BAD_STATEMENT;
