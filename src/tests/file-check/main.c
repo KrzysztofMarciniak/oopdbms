@@ -46,7 +46,9 @@ static void _write_file(const unsigned char* bytes, size_t count) {
 /** Write a README-format file with the given magic and class count. */
 static void _write_header(const char* magic, unsigned long class_count) {
         unsigned char bytes[FORMAT_FILE_SIZE];
-        struct executor_format_header header       = {0};
+        struct executor_format_header header = {
+            .version = EXECUTOR_FORMAT_VERSION_CURRENT,
+        };
         struct executor_format_metatable metatable = {0};
 
         header.class_count = (uint16_t)class_count;
@@ -123,8 +125,10 @@ static void _test_missing(void) {
                     got == FORMAT_FILE_SIZE &&
                         memcmp(bytes, STORAGE_MAGIC, STORAGE_MAGIC_SIZE) == 0 &&
                         bytes[8] == 0 && bytes[9] == 0 && bytes[10] == 0 &&
-                        bytes[11] == 0 && bytes[14] == 0 && bytes[15] == 0,
-                    "created: README magic, counts, and reserved field");
+                        bytes[11] == 0 &&
+                        bytes[14] == EXECUTOR_FORMAT_VERSION_CURRENT &&
+                        bytes[15] == 0,
+                    "created: README magic, counts, and format version");
                 _expect(TEST_FILE, writing[i], FILE_CHECK_STATE_READY,
                         FILE_CHECK_OK, "created: second check is ready");
         }

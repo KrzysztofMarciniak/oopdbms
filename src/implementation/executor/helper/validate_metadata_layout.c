@@ -40,7 +40,7 @@ bool executor_helper_validate_metadata_layout(
         uint64_t function_length;
 
         if (header == NULL || metatable == NULL ||
-            header->version > EXECUTOR_FORMAT_VERSION_CURRENT ||
+            header->version != EXECUTOR_FORMAT_VERSION_CURRENT ||
             file_size <
                 EXECUTOR_FORMAT_HEADER_SIZE + EXECUTOR_FORMAT_METATABLE_SIZE ||
             !executor_helper_multiply_u64(header->interface_count,

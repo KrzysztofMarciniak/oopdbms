@@ -16,7 +16,7 @@ bool executor_helper_create_header(
     const struct executor_format_header* header) {
         if (output == NULL || header == NULL ||
             capacity < EXECUTOR_FORMAT_HEADER_SIZE ||
-            header->version > EXECUTOR_FORMAT_VERSION_CURRENT) {
+            header->version != EXECUTOR_FORMAT_VERSION_CURRENT) {
                 return false;
         }
         memcpy(output, MAGIC, sizeof MAGIC);
@@ -38,7 +38,7 @@ bool executor_helper_read_header(const uint8_t* bytes, size_t length,
         header->class_count     = executor_helper_read_u16(bytes + 10);
         header->function_count  = executor_helper_read_u16(bytes + 12);
         header->version         = executor_helper_read_u16(bytes + 14);
-        if (header->version > EXECUTOR_FORMAT_VERSION_CURRENT) {
+        if (header->version != EXECUTOR_FORMAT_VERSION_CURRENT) {
                 return false;
         }
         return true;

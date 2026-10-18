@@ -40,7 +40,9 @@ static void _fail(struct file_check_error* error,
 static bool _create(const char* path, struct file_check_error* error) {
         uint8_t header_bytes[EXECUTOR_FORMAT_HEADER_SIZE];
         uint8_t metatable_bytes[EXECUTOR_FORMAT_METATABLE_SIZE];
-        struct executor_format_header header       = {0};
+        struct executor_format_header header = {
+            .version = EXECUTOR_FORMAT_VERSION_CURRENT,
+        };
         struct executor_format_metatable metatable = {0};
         FILE* file                                 = fopen(path, "wbx");
         bool failed;

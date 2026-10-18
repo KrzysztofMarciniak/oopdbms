@@ -283,9 +283,9 @@ The header is 16 bytes:
 | 8 | 2 | `interface_count` | Number of interface table entries (`u16`) |
 | 10 | 2 | `class_count` | Number of class table entries (`u16`) |
 | 12 | 2 | `function_count` | Number of function table entries (`u16`) |
-| 14 | 2 | `format_version` | `0` for contiguous object segments, `1` for descriptor-based object logs, `2` for compact object logs (`u16`) |
+| 14 | 2 | `format_version` | `2` for compact object logs (`u16`) |
 
-The three counts are each unsigned 16-bit integers, so each metadata table can contain at most 65,535 entries. Version `0` is the original contiguous-segment format, and version `1` stores object records with per-field descriptors. New databases use version `2`. Version `0` and `1` files remain readable and are migrated on their first mutating command; migration compacts version `1` history to the latest live record for each object and discards superseded records and tombstones. Object IDs and `next_object_id` are preserved. Read-only access does not migrate a legacy file. Other format versions are rejected.
+The three counts are each unsigned 16-bit integers, so each metadata table can contain at most 65,535 entries. Version `2` is the only supported format; files with any other version are rejected.
 
 ### Metatable
 
@@ -410,9 +410,7 @@ Each parameter descriptor contains `name_length` (`u16`), a type descriptor (one
 
 ### Class data and object logs
 
-In version `0`, class data is a contiguous segment of version `0` object records. The class table entry's `data_offset` and `data_length` identify that segment.
-
-Versions `1` and `2` store object versions in append-only per-class logs. Each node has a 12-byte header followed by one object record:
+Class data is stored in append-only per-class object logs. Each node has a 12-byte header followed by one object record:
 
 | Field | Size | Description |
 |---|---:|---|
@@ -420,33 +418,11 @@ Versions `1` and `2` store object versions in append-only per-class logs. Each n
 | `record_length` | 4 | Length of the following object record, excluding this node header (`u32`) |
 | `record` | `record_length` | One object record |
 
-The class table's `data_offset` points to the newest node. `data_length` is the total size of all nodes in that class's chain, including node headers. On `NEW` and `SET`, OOPDB appends the new record version; on `DELETE`, it appends a tombstone record with the deleted flag set and no fields. The first record found for an object ID while following the chain is its current version; a tombstone means the object is absent. `object_count` tracks live objects, while `next_object_id` continues to increase. Versions `1` and `2` avoid copying all existing records on every object mutation, but historical versions and tombstones remain in the file until a legacy version `1` database is compacted during migration. Object mutations update the affected class-table entry at its existing table offset rather than appending another copy of the full class table.
-
-The log node header is separate from the object record. Versions `0` and `1` use the descriptor-based object record format below; in a version `1` tombstone, `field_count` is zero and `flags` bit 0 is set.
-
-Each object record begins with a 16-byte header:
-
-| Field | Size | Description |
-|---|---:|---|
-| `record_length` | 4 | Total record length, including this header (`u32`) |
-| `object_id` | 8 | Object ID, unique within its class (`u64`) |
-| `flags` | 2 | Version 0: zero. Version 1: bit 0 marks a deleted-object tombstone; other bits are reserved (`u16`) |
-| `field_count` | 2 | Number of field records in the object (`u16`) |
-
-The object header is followed by `field_count` field records. Each field record contains:
-
-| Field | Size | Description |
-|---|---:|---|
-| `field_id` | 4 | ID of the field described by this record (`u32`) |
-| `type_code` | 1 | Type code from the type-code table (`u8`) |
-| `value_length` | 4 | Length of the value in bytes (`u32`) |
-| `value` | `value_length` | Encoded value bytes |
-
-Values use the encodings in the type-code table. For a pointer value, the value is a 4-byte target class ID followed by an 8-byte target object ID. For text, `value_length` counts UTF-8 bytes and no terminating NUL is stored. The type of a field is defined by the class schema; a stored field's type code must match that schema.
+The class table's `data_offset` points to the newest node. `data_length` is the total size of all nodes in that class's chain, including node headers. On `NEW` and `SET`, OOPDB appends the new record version; on `DELETE`, it appends a tombstone record with the deleted flag set and no values. The first record found for an object ID while following the chain is its current version; a tombstone means the object is absent. `object_count` tracks live objects, while `next_object_id` continues to increase. Object mutations update the affected class-table entry at its existing table offset rather than appending another copy of the full class table.
 
 Object IDs are scoped to their class, which matches command values such as `Book.1`. A pointer stores both the target class ID and object ID; it does not store a file offset or the text form of the reference.
 
-Version `2` removes the object-record length, field count, field IDs, and field type codes. The node's `record_length` frames the compact record. Its bytes are:
+The node's `record_length` frames the compact record. Its bytes are:
 
 | Field | Encoding | Description |
 |---|---|---|
@@ -454,11 +430,11 @@ Version `2` removes the object-record length, field count, field IDs, and field 
 | `flags` | 1 byte | Bit 0 marks a deleted-object tombstone; other bits are reserved |
 | `values` | Schema-defined | Values in effective class-schema order, including inherited fields |
 
-The schema determines each value's type and position. Integers use signed zigzag varints; floats remain little-endian IEEE 754 binary64; text uses an unsigned-varint byte length followed by UTF-8 bytes; booleans remain one byte (`0` or `1`); pointers contain a 4-byte target class ID followed by an unsigned-varint target object ID. A version `2` tombstone consists only of the object ID and deleted flag.
+The schema determines each value's type and position. Integers use signed zigzag varints; floats remain little-endian IEEE 754 binary64; text uses an unsigned-varint byte length followed by UTF-8 bytes; booleans remain one byte (`0` or `1`); pointers contain a 4-byte target class ID followed by an unsigned-varint target object ID. A tombstone consists only of the object ID and deleted flag.
 
 ### Physical arrangement
 
-A convenient physical arrangement for version `0` is:
+A convenient physical arrangement is:
 
 ```text
 +----------------------------------+
@@ -488,4 +464,4 @@ A convenient physical arrangement for version `0` is:
 
 This is the recommended ordering, not a substitute for following the offsets recorded in the metatable and metadata tables. Sections must not overlap, and every offset/length pair must fit entirely within the file. Readers must validate lengths before allocating memory or seeking. Text is length-prefixed UTF-8, not NUL-terminated.
 
-Versions `1` and `2` append object-log nodes to the file and update the active class table entry in place to point to the newest node. Replaced versions remain in the chain and are ignored by reads; no full class segment or full class-table copy is appended on each insert or update. Metadata tables and definitions continue to be located only through the active offsets in the metatable and table entries. Readers must validate node offsets, record lengths, and links before following them. An object index or secondary field indexes may be added later; `FIND` initially scans the class's object log and resolves the newest version for each object ID.
+Object-log nodes are appended to the file and the active class table entry is updated in place to point to the newest node. Replaced versions remain in the chain and are ignored by reads; no full class segment or full class-table copy is appended on each insert or update. Metadata tables and definitions continue to be located only through the active offsets in the metatable and table entries. Readers must validate node offsets, record lengths, and links before following them. An object index or secondary field indexes may be added later; `FIND` initially scans the class's object log and resolves the newest version for each object ID.

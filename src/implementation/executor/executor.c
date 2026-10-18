@@ -44,40 +44,12 @@ static bool _kind_matches_group(const struct analyzer_statement* statement) {
         }
 }
 
-static bool _kind_mutates_database(enum ANALYZER_STATEMENT kind) {
-        switch (kind) {
-                case ANALYZER_CREATE_CLASS:
-                case ANALYZER_DROP_CLASS:
-                case ANALYZER_ALTER_CLASS_ADD_FIELD:
-                case ANALYZER_ALTER_CLASS_DROP_FIELD:
-                case ANALYZER_ALTER_CLASS_RENAME_FIELD:
-                case ANALYZER_ALTER_CLASS_RENAME:
-                case ANALYZER_ALTER_CLASS_EXTENDS:
-                case ANALYZER_ALTER_CLASS_IMPLEMENTS:
-                case ANALYZER_CREATE_INTERFACE:
-                case ANALYZER_DROP_INTERFACE:
-                case ANALYZER_CREATE_FUNCTION:
-                case ANALYZER_DROP_FUNCTION:
-                case ANALYZER_NEW:
-                case ANALYZER_SET:
-                case ANALYZER_DELETE:
-                        return true;
-                default:
-                        return false;
-        }
-}
-
 enum EXECUTOR_RESULT i_execute(struct database* db,
                                const struct analyzer_statement* statement) {
         enum EXECUTOR_RESULT result;
 
         if (db == NULL || !_kind_matches_group(statement)) {
                 return EXECUTOR_ERROR_BAD_STATEMENT;
-        }
-        if (db->format_mode && !db->read_only &&
-            _kind_mutates_database(statement->kind) &&
-            !executor_format_file_migrate(db)) {
-                return EXECUTOR_ERROR_SAVE_FAILED;
         }
         switch (statement->group) {
                 case ANALYZER_GROUP_SCHEMA:

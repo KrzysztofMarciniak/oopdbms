@@ -35,8 +35,8 @@ static int failures;
 
 static void test_primitives_and_header(void) {
         const uint8_t expected_header[] = {'O', 'O', 'P', 'D', 'B', 0, 0, 0,
-                                           1,   0,   2,   0,   3,   0, 0, 0};
-        struct executor_format_header header  = {1, 2, 3, 0};
+                                           1,   0,   2,   0,   3,   0, 2, 0};
+        struct executor_format_header header  = {1, 2, 3, 2};
         struct executor_format_header decoded = {0};
         uint8_t bytes[16]                     = {0};
 
@@ -59,13 +59,12 @@ static void test_primitives_and_header(void) {
         CHECK(!executor_helper_read_header(bytes, 15, &decoded),
               "truncated header is rejected");
         bytes[14] = 1;
-        CHECK(executor_helper_read_header(bytes, sizeof bytes, &decoded) &&
-                  decoded.version == EXECUTOR_FORMAT_VERSION_OBJECT_LOG,
-              "known object-log format version is accepted");
+        CHECK(!executor_helper_read_header(bytes, sizeof bytes, &decoded),
+              "legacy object-log format version is rejected");
         bytes[14] = 2;
         CHECK(executor_helper_read_header(bytes, sizeof bytes, &decoded) &&
-                  decoded.version == EXECUTOR_FORMAT_VERSION_COMPACT_OBJECT_LOG,
-              "compact object-log format version is accepted");
+                  decoded.version == EXECUTOR_FORMAT_VERSION_CURRENT,
+              "current compact object-log format version is accepted");
         bytes[14] = 3;
         CHECK(!executor_helper_read_header(bytes, sizeof bytes, &decoded),
               "unsupported format version is rejected");
@@ -401,7 +400,8 @@ static void test_compact_object_records(void) {
 }
 
 static void test_metadata_layout_validation(void) {
-        const struct executor_format_header header = {0, 1, 0, 0};
+        const struct executor_format_header header = {
+            0, 1, 0, EXECUTOR_FORMAT_VERSION_CURRENT};
         struct executor_format_metatable metatable = {
             .classes = {.offset = 64, .length = 48},
         };

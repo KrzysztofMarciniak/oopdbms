@@ -263,11 +263,7 @@ bool _class_or_descendant_has_objects(struct executor_format_file* file,
                         struct executor_class_view view;
                         uint32_t parent_id;
 
-                        if (cursor == class_id &&
-                            (candidate.object_count != 0 ||
-                             (file->header.version ==
-                                  EXECUTOR_FORMAT_VERSION_CONTIGUOUS &&
-                              candidate.data_length != 0))) {
+                        if (cursor == class_id && candidate.object_count != 0) {
                                 return true;
                         }
                         if (!_class_entry_by_id(file, cursor, &current) ||
