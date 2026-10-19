@@ -149,6 +149,9 @@ or when `NO_COLOR` is set.
 The project builds with C99 and Make; `make`, `make release`, and
 `make quick_start` also run `clang-format`. `make install` requires the
 `install` utility, and `make docs` additionally requires Doxygen.
+Debug and release builds compile sources into separate object files under
+`build/` and track header dependencies, so subsequent builds only recompile
+changed files.
 
 ## How a command runs
 

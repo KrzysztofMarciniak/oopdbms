@@ -18,7 +18,7 @@ workdir=$(mktemp -d)
 trap 'rm -rf "$workdir"' EXIT HUP INT TERM
 sqlite_db=$workdir/sqlite.db
 oopdb_db=$workdir/oopdb.oopdb
-record_count=1000
+record_count=5000
 
 {
         echo 'CREATE TABLE Person (name TEXT, age INTEGER);'

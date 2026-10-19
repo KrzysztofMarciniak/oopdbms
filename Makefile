@@ -22,9 +22,10 @@ TEST_OBJECTS := $(patsubst src/tests/%.c,$(BUILD_DIR)/tests/%.o,\
 		$(filter-out $(TEST_RUNNER_SOURCE),$(TEST_SOURCES)))
 TEST_RUNNER := $(BUILD_DIR)/tests/test_runner
 LIB_SOURCES := $(filter-out src/main.c,$(SOURCES))
+LIB_OBJECTS := $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(LIB_SOURCES))
 HEADERS := $(shell find src -type f -name '*.h')
 OBJECTS := $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(SOURCES))
-DEPFILES := $(OBJECTS:.o=.d)
+DEPFILES := $(OBJECTS:.o=.d) $(TEST_OBJECTS:.o=.d)
 DOXYGEN ?= doxygen
 DOCS_DIR := $(BUILD_DIR)/docs
 PREFIX ?= /usr/local
@@ -33,6 +34,8 @@ INSTALL ?= install
 RELEASE_DIR := $(BUILD_DIR)/release
 RELEASE_BINARY := $(RELEASE_DIR)/$(TARGET)
 RELEASE_CFLAGS ?= $(CFLAGS) -O2
+RELEASE_OBJECTS := $(patsubst src/%.c,$(RELEASE_DIR)/%.o,$(SOURCES))
+RELEASE_DEPFILES := $(RELEASE_OBJECTS:.o=.d)
 QUICK_START_DB ?= $(BUILD_DIR)/quick-start.oopdb
 
 .PHONY: build clean docs format install quick_start release run test
@@ -43,13 +46,25 @@ format:
 	@clang-format -i $(SOURCES) $(TEST_SOURCES) $(HEADERS)
 
 build: format
-	mkdir -p $(BUILD_DIR)
-	$(CC) $(CFLAGS) -Isrc $(SOURCES) -o $(BUILD_DIR)/$(TARGET)
+	$(MAKE) --no-print-directory $(BUILD_DIR)/$(TARGET)
+
+$(BUILD_DIR)/$(TARGET): $(OBJECTS)
+	$(CC) $(LDFLAGS) $^ $(LDLIBS) -o $@
+
+$(BUILD_DIR)/%.o: src/%.c
+	mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) -Isrc $(CFLAGS) -MMD -MP -c $< -o $@
+
+$(RELEASE_DIR)/%.o: src/%.c
+	mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) -Isrc $(RELEASE_CFLAGS) -MMD -MP -c $< -o $@
 
 release: format
-	@mkdir -p $(RELEASE_DIR)
-	@printf 'Building optimized release binary: %s\n' "$(RELEASE_BINARY)"
-	@$(CC) $(RELEASE_CFLAGS) -Isrc $(SOURCES) -o $(RELEASE_BINARY)
+	$(MAKE) --no-print-directory $(RELEASE_BINARY)
+
+$(RELEASE_BINARY): $(RELEASE_OBJECTS)
+	@printf 'Linking optimized release binary: %s\n' "$@"
+	$(CC) $(LDFLAGS) $^ $(LDLIBS) -o $@
 
 install: release
 	$(INSTALL) -d "$(DESTDIR)$(PREFIX)/bin"
@@ -98,13 +113,14 @@ test: format
 	$(MAKE) --no-print-directory $(TEST_RUNNER)
 	$(TEST_RUNNER) $(TEST_ARGS)
 
-$(TEST_RUNNER): $(TEST_RUNNER_SOURCE) $(TEST_OBJECTS) $(LIB_SOURCES) $(HEADERS)
+$(TEST_RUNNER): $(TEST_RUNNER_SOURCE) $(TEST_OBJECTS) $(LIB_OBJECTS) $(HEADERS)
 	mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -Isrc $(LIB_SOURCES) $(TEST_OBJECTS) $(TEST_RUNNER_SOURCE) -o $@
+	$(CC) $(LDFLAGS) $(LIB_OBJECTS) $(TEST_OBJECTS) $(TEST_RUNNER_SOURCE) \
+		$(LDLIBS) -o $@
 
 $(BUILD_DIR)/tests/%.o: src/tests/%.c
 	mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -Isrc \
+	$(CC) $(CPPFLAGS) -Isrc $(CFLAGS) -MMD -MP \
 		-Dmain=test_$(subst -,_,$(subst /,_,$(basename $(patsubst src/tests/%,%,$<)))) \
 		-c $< -o $@
 
@@ -128,5 +144,6 @@ docs:
 clean:
 	rm -rf $(BUILD_DIR)
 
-	
+-include $(DEPFILES) $(RELEASE_DEPFILES)
+
 # end
