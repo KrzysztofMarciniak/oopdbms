@@ -63,6 +63,10 @@ void executor_error_print(enum EXECUTOR_RESULT result,
                                 "failed\n",
                                 _name_of(kind));
                         break;
+                case EXECUTOR_ERROR_OUTPUT_FAILED:
+                        fprintf(stderr, "executor: could not write %s output\n",
+                                _name_of(kind));
+                        break;
                 default:
                         puts("Unknown executor error");
                         break;

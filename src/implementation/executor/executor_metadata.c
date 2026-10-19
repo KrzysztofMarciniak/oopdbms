@@ -30,7 +30,8 @@ static bool _type_name(struct executor_format_file* file,
 }
 
 static enum EXECUTOR_RESULT _describe_class(
-    struct database* db, const struct analyzer_statement* statement) {
+    struct database* db, const struct analyzer_statement* statement,
+    FILE* output) {
         struct executor_format_file file;
         struct executor_format_class_entry entry;
         struct executor_class_view view;
@@ -50,30 +51,38 @@ static enum EXECUTOR_RESULT _describe_class(
                 _free_schema_fields(schema, schema_count);
                 return EXECUTOR_ERROR_STORAGE_FAILED;
         }
-        if (printf("%s\n", statement->name) < 0) {
+        if (fprintf(output, "%s\n", statement->name) < 0) {
                 _class_view_free(&view);
                 _free_schema_fields(schema, schema_count);
-                return EXECUTOR_ERROR_STORAGE_FAILED;
+                return EXECUTOR_ERROR_OUTPUT_FAILED;
         }
         if (view.parent_class_id != 0) {
                 char* parent_name = NULL;
                 if (!_class_name_by_id(&file, view.parent_class_id,
-                                       &parent_name) ||
-                    printf("  EXTENDS %s\n", parent_name) < 0) {
-                        free(parent_name);
+                                       &parent_name)) {
                         _class_view_free(&view);
                         _free_schema_fields(schema, schema_count);
                         return EXECUTOR_ERROR_STORAGE_FAILED;
+                }
+                if (fprintf(output, "  EXTENDS %s\n", parent_name) < 0) {
+                        free(parent_name);
+                        _class_view_free(&view);
+                        _free_schema_fields(schema, schema_count);
+                        return EXECUTOR_ERROR_OUTPUT_FAILED;
                 }
                 free(parent_name);
         }
         for (i = 0; i < schema_count; i++) {
                 char type[UINT16_MAX + 16];
-                if (!_type_name(&file, &schema[i], type, sizeof type) ||
-                    printf("  %s %s\n", schema[i].name, type) < 0) {
+                if (!_type_name(&file, &schema[i], type, sizeof type)) {
                         _class_view_free(&view);
                         _free_schema_fields(schema, schema_count);
                         return EXECUTOR_ERROR_STORAGE_FAILED;
+                }
+                if (fprintf(output, "  %s %s\n", schema[i].name, type) < 0) {
+                        _class_view_free(&view);
+                        _free_schema_fields(schema, schema_count);
+                        return EXECUTOR_ERROR_OUTPUT_FAILED;
                 }
         }
         for (i = 0; i < view.interface_count; i++) {
@@ -99,11 +108,11 @@ static enum EXECUTOR_RESULT _describe_class(
                        interface_view.name_length);
                 interface_name[interface_view.name_length] = '\0';
                 _interface_view_free(&interface_view);
-                if (printf("  IMPLEMENTS %s\n", interface_name) < 0) {
+                if (fprintf(output, "  IMPLEMENTS %s\n", interface_name) < 0) {
                         free(interface_name);
                         _class_view_free(&view);
                         _free_schema_fields(schema, schema_count);
-                        return EXECUTOR_ERROR_STORAGE_FAILED;
+                        return EXECUTOR_ERROR_OUTPUT_FAILED;
                 }
                 free(interface_name);
         }
@@ -112,7 +121,8 @@ static enum EXECUTOR_RESULT _describe_class(
         return EXECUTOR_OK;
 }
 
-static enum EXECUTOR_RESULT _list_entries(struct database* db, bool classes) {
+static enum EXECUTOR_RESULT _list_entries(struct database* db, bool classes,
+                                          FILE* output) {
         struct executor_format_file file;
         size_t count;
         size_t index;
@@ -151,8 +161,11 @@ static enum EXECUTOR_RESULT _list_entries(struct database* db, bool classes) {
                         name_offset        = 4;
                 }
                 if (!_read_definition(&file, definition_offset,
-                                      definition_length, &definition) ||
-                    definition_length < name_offset) {
+                                      definition_length, &definition)) {
+                        return EXECUTOR_ERROR_STORAGE_FAILED;
+                }
+                if (definition_length < name_offset) {
+                        free(definition);
                         return EXECUTOR_ERROR_STORAGE_FAILED;
                 }
                 name_length =
@@ -161,11 +174,11 @@ static enum EXECUTOR_RESULT _list_entries(struct database* db, bool classes) {
                         free(definition);
                         return EXECUTOR_ERROR_STORAGE_FAILED;
                 }
-                if (fwrite(definition + name_offset, 1, name_length, stdout) !=
+                if (fwrite(definition + name_offset, 1, name_length, output) !=
                         name_length ||
-                    fputc('\n', stdout) == EOF) {
+                    fputc('\n', output) == EOF) {
                         free(definition);
-                        return EXECUTOR_ERROR_STORAGE_FAILED;
+                        return EXECUTOR_ERROR_OUTPUT_FAILED;
                 }
                 free(definition);
         }
@@ -173,14 +186,15 @@ static enum EXECUTOR_RESULT _list_entries(struct database* db, bool classes) {
 }
 
 enum EXECUTOR_RESULT executor_metadata_execute(
-    struct database* db, const struct analyzer_statement* statement) {
+    struct database* db, const struct analyzer_statement* statement,
+    FILE* output) {
         switch (statement->kind) {
                 case ANALYZER_LIST_CLASSES:
-                        return _list_entries(db, true);
+                        return _list_entries(db, true, output);
                 case ANALYZER_LIST_INTERFACES:
-                        return _list_entries(db, false);
+                        return _list_entries(db, false, output);
                 case ANALYZER_DESCRIBE:
-                        return _describe_class(db, statement);
+                        return _describe_class(db, statement, output);
                 default:
                         return EXECUTOR_ERROR_NOT_IMPLEMENTED;
         }

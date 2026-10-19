@@ -6,6 +6,7 @@
 
 CC ?= cc
 AR ?= ar
+CLANG_FORMAT ?= clang-format
 CFLAGS := \
 		-std=c99 \
 		-Wall	\
@@ -29,7 +30,7 @@ HEADERS := $(shell find src -type f -name '*.h')
 OBJECTS := $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(SOURCES))
 DEPFILES := $(OBJECTS:.o=.d) $(TEST_OBJECTS:.o=.d)
 ENGINE_NAME := oopdbms-engine
-ENGINE_VERSION := 0.1.0
+ENGINE_VERSION := 0.2.0
 ENGINE_SONAME := lib$(ENGINE_NAME).so.0
 ENGINE_DIR := $(BUILD_DIR)/lib
 ENGINE_STATIC := $(ENGINE_DIR)/lib$(ENGINE_NAME).a
@@ -50,12 +51,16 @@ RELEASE_OBJECTS := $(patsubst src/%.c,$(RELEASE_DIR)/%.o,$(SOURCES))
 RELEASE_DEPFILES := $(RELEASE_OBJECTS:.o=.d)
 QUICK_START_DB ?= $(BUILD_DIR)/quick-start.oopdb
 
-.PHONY: all build clean docs engine format install quick_start release run test
+.PHONY: all build clean docs engine format format-check install quick_start \
+	release run test
 
 all: build engine
 
 format:
-	@clang-format -i $(SOURCES) $(TEST_SOURCES) $(HEADERS)
+	@$(CLANG_FORMAT) -i $(SOURCES) $(TEST_SOURCES) $(HEADERS)
+
+format-check:
+	$(CLANG_FORMAT) --dry-run --Werror $(SOURCES) $(TEST_SOURCES) $(HEADERS)
 
 build: format
 	$(MAKE) --no-print-directory $(BUILD_DIR)/$(TARGET)
@@ -119,7 +124,8 @@ install: release engine
 		$(INSTALL) -d "$$(dirname "$$target")"; \
 		$(INSTALL) -m 644 "$$header" "$$target"; \
 	done
-	sed 's|@prefix@|$(PREFIX)|g' oopdbms-engine.pc.in > \
+	sed -e 's|@prefix@|$(PREFIX)|g' \
+		-e 's|@version@|$(ENGINE_VERSION)|g' oopdbms-engine.pc.in > \
 		"$(DESTDIR)$(PREFIX)/lib/pkgconfig/$(ENGINE_NAME).pc"
 	$(INSTALL) -m 644 LICENSE \
 		"$(DESTDIR)$(PREFIX)/share/licenses/$(ENGINE_NAME)/LICENSE"

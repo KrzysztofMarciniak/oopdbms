@@ -139,6 +139,7 @@ make install                 # Install CLI, engine library, headers, and pkg-con
 make install PREFIX="$HOME/.local" # Install to ~/.local without root
 make docs                    # Generate Doxygen HTML at build/docs/html/index.html
 make format                  # Run clang-format on all sources
+make format-check            # Check formatting without modifying files
 make clean                   # Remove build/
 ```
 

@@ -532,14 +532,15 @@ done:
 }
 
 enum EXECUTOR_RESULT executor_functions_execute(
-    struct database* db, const struct analyzer_statement* statement) {
+    struct database* db, const struct analyzer_statement* statement,
+    FILE* output) {
         switch (statement->kind) {
                 case ANALYZER_CREATE_FUNCTION:
                         return _create_function(db, statement);
                 case ANALYZER_DROP_FUNCTION:
                         return _drop_function(db, statement);
                 case ANALYZER_CALL:
-                        return _call_function(db, statement);
+                        return _call_function(db, statement, output);
                 default:
                         return EXECUTOR_ERROR_NOT_IMPLEMENTED;
         }

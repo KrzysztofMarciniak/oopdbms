@@ -21,7 +21,9 @@ enum EXECUTOR_RESULT {
         /** The command could not read required database metadata. */
         EXECUTOR_ERROR_STORAGE_FAILED,
         /** The statement ran but the changes could not be saved. */
-        EXECUTOR_ERROR_SAVE_FAILED
+        EXECUTOR_ERROR_SAVE_FAILED,
+        /** The command output could not be written. */
+        EXECUTOR_ERROR_OUTPUT_FAILED
 };
 
 /**

@@ -687,14 +687,47 @@ int main(void) {
         _schema_and_function_commands(&db);
         _schema_constraints(&db);
         _object_and_function_commands(&db);
+        statement.kind            = ANALYZER_CREATE_CLASS;
+        statement.group           = ANALYZER_GROUP_SCHEMA;
+        statement.name            = "OutputStreamCheck";
+        statement.fields.items    = &field;
+        statement.fields.count    = 1;
+        statement.fields.capacity = 1;
+        CHECK(i_execute(&db, &statement) == EXECUTOR_OK,
+              "create class for output-stream test");
         database_close(&db);
         _test_unsupported_versions_rejected();
         CHECK(database_init_format_mode(&db, TEST_FILE, false, true),
               "open existing database in read-only mode");
+        statement       = (struct analyzer_statement){0};
         statement.kind  = ANALYZER_LIST_CLASSES;
         statement.group = ANALYZER_GROUP_METADATA;
         CHECK(i_execute(&db, &statement) == EXECUTOR_OK,
               "read-only database supports metadata reads");
+        {
+                FILE* output = tmpfile();
+                char contents[1024];
+                size_t length;
+
+                CHECK(output != NULL, "create output stream");
+                CHECK(i_execute_to(&db, &statement, NULL) ==
+                          EXECUTOR_ERROR_BAD_STATEMENT,
+                      "output-stream executor rejects a null stream");
+                if (output != NULL) {
+                        CHECK(i_execute_to(&db, &statement, output) ==
+                                  EXECUTOR_OK,
+                              "metadata execution writes to supplied stream");
+                        CHECK(fflush(output) == 0 &&
+                                  fseek(output, 0, SEEK_SET) == 0,
+                              "rewind output stream");
+                        length =
+                            fread(contents, 1, sizeof contents - 1, output);
+                        contents[length] = '\0';
+                        CHECK(strstr(contents, "OutputStreamCheck") != NULL,
+                              "supplied stream contains command output");
+                        CHECK(fclose(output) == 0, "close output stream");
+                }
+        }
         statement                 = (struct analyzer_statement){0};
         statement.kind            = ANALYZER_CREATE_CLASS;
         statement.group           = ANALYZER_GROUP_SCHEMA;

@@ -5,6 +5,6 @@ includedir=${prefix}/include
 
 Name: OOPDBMS Engine
 Description: Embedded C engine for OOPDBMS
-Version: 0.1.0
+Version: @version@
 Libs: -L${libdir} -loopdbms-engine
 Cflags: -I${includedir}/oopdbms-engine

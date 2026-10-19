@@ -52,6 +52,11 @@ name per line; `FIND` prints each matching object and its values, `CALL` prints
 the returned value, and `DESCRIBE` prints the class, inherited fields, and
 implemented interfaces.
 
+`i_execute()` writes command output to standard output for the command-line
+client. `i_execute_to()` accepts a caller-owned `FILE*` output stream for
+embedded callers; it neither closes nor flushes that stream. Both entry points
+use the same executor and preserve the same command behavior.
+
 ## Testing
 
 Tests live in `src/tests/` and run together through one terminal dashboard.

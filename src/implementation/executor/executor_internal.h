@@ -112,11 +112,14 @@ struct executor_function_view {
 enum EXECUTOR_RESULT executor_schema_execute(
     struct database* db, const struct analyzer_statement* statement);
 enum EXECUTOR_RESULT executor_functions_execute(
-    struct database* db, const struct analyzer_statement* statement);
+    struct database* db, const struct analyzer_statement* statement,
+    FILE* output);
 enum EXECUTOR_RESULT executor_objects_execute(
-    struct database* db, const struct analyzer_statement* statement);
+    struct database* db, const struct analyzer_statement* statement,
+    FILE* output);
 enum EXECUTOR_RESULT executor_metadata_execute(
-    struct database* db, const struct analyzer_statement* statement);
+    struct database* db, const struct analyzer_statement* statement,
+    FILE* output);
 bool _name_is(const uint8_t* definition, size_t length,
               size_t name_header_offset, size_t name_offset, const char* name);
 void _class_view_free(struct executor_class_view* view);
@@ -148,8 +151,9 @@ bool _class_name_by_id(struct executor_format_file* file, uint32_t class_id,
                        char** name);
 bool _field_name_equal(const struct executor_format_field* field,
                        const char* name);
-bool _print_value(struct executor_format_file* file,
-                  const struct executor_value* value);
+enum EXECUTOR_RESULT _print_value(FILE* output,
+                                  struct executor_format_file* file,
+                                  const struct executor_value* value);
 bool _field_types_equal(const struct executor_format_field* left,
                         const struct executor_format_field* right);
 bool _find_function(struct executor_format_file* file, uint32_t owner_class_id,
@@ -164,7 +168,8 @@ bool _evaluate_ast(const struct analyzer_expression* expression,
                    struct executor_value* result);
 bool _next_id(uint32_t max_id, uint32_t* next_id);
 enum EXECUTOR_RESULT _call_function(struct database* db,
-                                    const struct analyzer_statement* statement);
+                                    const struct analyzer_statement* statement,
+                                    FILE* output);
 bool _class_field_by_bytes(struct executor_format_file* file, uint32_t class_id,
                            const uint8_t* name, uint16_t name_length,
                            struct executor_format_field* found);
@@ -173,7 +178,8 @@ bool _schema_field_index(const struct executor_format_field* fields,
                          size_t count, const char* name, size_t* index);
 bool _max_interface_id(struct executor_format_file* file, uint32_t* max_id);
 enum EXECUTOR_RESULT executor_metadata_execute(
-    struct database* db, const struct analyzer_statement* statement);
+    struct database* db, const struct analyzer_statement* statement,
+    FILE* output);
 bool _max_field_id(struct executor_format_file* file, uint32_t* max_field_id);
 bool _interface_fields_satisfied(
     struct executor_format_file* file,
@@ -221,7 +227,8 @@ bool _class_index_by_name(struct executor_format_file* file, const char* name,
                           size_t* index,
                           struct executor_format_class_entry* entry);
 enum EXECUTOR_RESULT executor_functions_execute(
-    struct database* db, const struct analyzer_statement* statement);
+    struct database* db, const struct analyzer_statement* statement,
+    FILE* output);
 bool _interface_index_by_name(struct executor_format_file* file,
                               const char* name, size_t* index,
                               struct executor_format_interface_entry* entry);
@@ -238,7 +245,8 @@ bool _class_has_external_references(
     struct executor_format_file* file,
     const struct executor_format_class_entry* target);
 enum EXECUTOR_RESULT executor_objects_execute(
-    struct database* db, const struct analyzer_statement* statement);
+    struct database* db, const struct analyzer_statement* statement,
+    FILE* output);
 bool _evaluate_text_expression(const uint8_t* expression,
                                size_t expression_length,
                                struct executor_eval_context* context,

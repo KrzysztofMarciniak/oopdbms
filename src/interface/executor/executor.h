@@ -6,6 +6,8 @@
  * @brief Executor interface, step 4: run a checked statement.
  */
 
+#include <stdio.h>
+
 #include "error/executor/executor_error.h"
 #include "interface/analyzer/statement.h"
 #include "interface/storage/database.h"
@@ -23,5 +25,19 @@
  */
 enum EXECUTOR_RESULT i_execute(struct database* db,
                                const struct analyzer_statement* statement);
+
+/**
+ * @brief Run a checked statement, writing its output to a caller-owned stream.
+ *
+ * @param db        Database checked in step 3.
+ * @param statement Statement from the analyzer.
+ * @param output    Writable output stream; must not be NULL.
+ *                  The caller retains ownership; this function does not
+ *                  flush or close it.
+ * @return EXECUTOR_OK, or what went wrong.
+ */
+enum EXECUTOR_RESULT i_execute_to(struct database* db,
+                                  const struct analyzer_statement* statement,
+                                  FILE* output);
 
 #endif// INTERFACE_EXECUTOR_EXECUTOR_H

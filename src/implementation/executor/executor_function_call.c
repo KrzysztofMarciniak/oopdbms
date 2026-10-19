@@ -130,46 +130,57 @@ bool _class_name_by_id(struct executor_format_file* file, uint32_t class_id,
         return true;
 }
 
-bool _print_value(struct executor_format_file* file,
-                  const struct executor_value* value) {
+enum EXECUTOR_RESULT _print_value(FILE* output,
+                                  struct executor_format_file* file,
+                                  const struct executor_value* value) {
         switch (value->type_code) {
                 case EXECUTOR_FORMAT_TYPE_INTEGER:
-                        return printf("%lld",
-                                      (long long)value->value.integer) >= 0;
+                        return fprintf(output, "%lld",
+                                       (long long)value->value.integer) >= 0
+                                   ? EXECUTOR_OK
+                                   : EXECUTOR_ERROR_OUTPUT_FAILED;
                 case EXECUTOR_FORMAT_TYPE_FLOAT:
-                        return printf("%.17g", value->value.floating) >= 0;
+                        return fprintf(output, "%.17g",
+                                       value->value.floating) >= 0
+                                   ? EXECUTOR_OK
+                                   : EXECUTOR_ERROR_OUTPUT_FAILED;
                 case EXECUTOR_FORMAT_TYPE_TEXT:
-                        if (putchar('"') == EOF ||
+                        if (fputc('"', output) == EOF ||
                             fwrite(value->value.text.bytes, 1,
                                    value->value.text.length,
-                                   stdout) != value->value.text.length ||
-                            putchar('"') == EOF) {
-                                return false;
+                                   output) != value->value.text.length ||
+                            fputc('"', output) == EOF) {
+                                return EXECUTOR_ERROR_OUTPUT_FAILED;
                         }
-                        return true;
+                        return EXECUTOR_OK;
                 case EXECUTOR_FORMAT_TYPE_BOOL:
                         return fputs(value->value.boolean ? "true" : "false",
-                                     stdout) >= 0;
+                                     output) >= 0
+                                   ? EXECUTOR_OK
+                                   : EXECUTOR_ERROR_OUTPUT_FAILED;
                 case EXECUTOR_FORMAT_TYPE_POINTER: {
                         char* name = NULL;
-                        bool ok;
                         if (!_class_name_by_id(
                                 file, value->value.pointer.class_id, &name)) {
-                                return false;
+                                return EXECUTOR_ERROR_STORAGE_FAILED;
                         }
-                        ok = printf("%s.%llu", name,
+                        if (fprintf(output, "%s.%llu", name,
                                     (unsigned long long)
-                                        value->value.pointer.object_id) >= 0;
+                                        value->value.pointer.object_id) < 0) {
+                                free(name);
+                                return EXECUTOR_ERROR_OUTPUT_FAILED;
+                        }
                         free(name);
-                        return ok;
+                        return EXECUTOR_OK;
                 }
                 default:
-                        return false;
+                        return EXECUTOR_ERROR_STORAGE_FAILED;
         }
 }
 
-enum EXECUTOR_RESULT _call_function(
-    struct database* db, const struct analyzer_statement* statement) {
+enum EXECUTOR_RESULT _call_function(struct database* db,
+                                    const struct analyzer_statement* statement,
+                                    FILE* output) {
         struct executor_format_file file;
         struct executor_format_class_entry owner;
         struct executor_format_function_entry function_entry;
@@ -256,14 +267,23 @@ enum EXECUTOR_RESULT _call_function(
                     .bindings      = bindings,
                     .binding_count = function.parameter_count,
                 };
+                enum EXECUTOR_RESULT print_result;
                 if (!_evaluate_text_expression(function.expression,
                                                function.expression_length,
                                                &context, &returned) ||
                     returned.type_code != function.return_type_code ||
                     (returned.type_code == EXECUTOR_FORMAT_TYPE_POINTER &&
                      returned.value.pointer.class_id !=
-                         function.return_target_class_id) ||
-                    !_print_value(&file, &returned) || putchar('\n') == EOF) {
+                         function.return_target_class_id)) {
+                        goto done;
+                }
+                print_result = _print_value(output, &file, &returned);
+                if (print_result != EXECUTOR_OK) {
+                        result = print_result;
+                        goto done;
+                }
+                if (fputc('\n', output) == EOF) {
+                        result = EXECUTOR_ERROR_OUTPUT_FAILED;
                         goto done;
                 }
         }

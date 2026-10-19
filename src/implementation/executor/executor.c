@@ -46,9 +46,15 @@ static bool _kind_matches_group(const struct analyzer_statement* statement) {
 
 enum EXECUTOR_RESULT i_execute(struct database* db,
                                const struct analyzer_statement* statement) {
+        return i_execute_to(db, statement, stdout);
+}
+
+enum EXECUTOR_RESULT i_execute_to(struct database* db,
+                                  const struct analyzer_statement* statement,
+                                  FILE* output) {
         enum EXECUTOR_RESULT result;
 
-        if (db == NULL || !_kind_matches_group(statement)) {
+        if (db == NULL || output == NULL || !_kind_matches_group(statement)) {
                 return EXECUTOR_ERROR_BAD_STATEMENT;
         }
         switch (statement->group) {
@@ -56,13 +62,16 @@ enum EXECUTOR_RESULT i_execute(struct database* db,
                         result = executor_schema_execute(db, statement);
                         break;
                 case ANALYZER_GROUP_FUNCTION:
-                        result = executor_functions_execute(db, statement);
+                        result =
+                            executor_functions_execute(db, statement, output);
                         break;
                 case ANALYZER_GROUP_OBJECT:
-                        result = executor_objects_execute(db, statement);
+                        result =
+                            executor_objects_execute(db, statement, output);
                         break;
                 case ANALYZER_GROUP_METADATA:
-                        result = executor_metadata_execute(db, statement);
+                        result =
+                            executor_metadata_execute(db, statement, output);
                         break;
                 default:
                         return EXECUTOR_ERROR_BAD_STATEMENT;

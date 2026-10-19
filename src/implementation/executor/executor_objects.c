@@ -623,7 +623,8 @@ done:
 }
 
 static enum EXECUTOR_RESULT _new_object(
-    struct database* db, const struct analyzer_statement* statement) {
+    struct database* db, const struct analyzer_statement* statement,
+    FILE* output) {
         struct executor_format_file file;
         struct executor_format_class_entry entry;
         struct executor_format_field* schema               = NULL;
@@ -713,8 +714,11 @@ static enum EXECUTOR_RESULT _new_object(
                         result = EXECUTOR_ERROR_SAVE_FAILED;
                         goto done;
                 }
-                printf("%s.%llu\n", statement->name,
-                       (unsigned long long)object_id);
+                if (fprintf(output, "%s.%llu\n", statement->name,
+                            (unsigned long long)object_id) < 0) {
+                        result = EXECUTOR_ERROR_OUTPUT_FAILED;
+                        goto done;
+                }
                 result = EXECUTOR_OK;
                 goto done;
         }
@@ -760,7 +764,11 @@ static enum EXECUTOR_RESULT _new_object(
                 result = EXECUTOR_ERROR_SAVE_FAILED;
                 goto done;
         }
-        printf("%s.%llu\n", statement->name, (unsigned long long)object_id);
+        if (fprintf(output, "%s.%llu\n", statement->name,
+                    (unsigned long long)object_id) < 0) {
+                result = EXECUTOR_ERROR_OUTPUT_FAILED;
+                goto done;
+        }
         result = EXECUTOR_OK;
 done:
         if (record_fields != NULL) {
@@ -1351,7 +1359,8 @@ done:
 }
 
 static enum EXECUTOR_RESULT _find_objects(
-    struct database* db, const struct analyzer_statement* statement) {
+    struct database* db, const struct analyzer_statement* statement,
+    FILE* output) {
         struct executor_format_file file;
         struct executor_format_class_entry entry;
         struct executor_format_field* schema = NULL;
@@ -1391,6 +1400,7 @@ static enum EXECUTOR_RESULT _find_objects(
                         struct executor_format_object_field* fields = NULL;
                         size_t field_index;
                         struct executor_value condition;
+                        enum EXECUTOR_RESULT print_result;
                         bool matches = true;
 
                         if (record->deleted ||
@@ -1420,13 +1430,13 @@ static enum EXECUTOR_RESULT _find_objects(
                                 matches = condition.value.boolean;
                         }
                         if (matches) {
-                                if (printf(
-                                        "%s.%llu", statement->name,
+                                if (fprintf(
+                                        output, "%s.%llu", statement->name,
                                         (unsigned long long)header.object_id) <
                                     0) {
                                         _free_object_fields(fields,
                                                             schema_count);
-                                        result = EXECUTOR_ERROR_STORAGE_FAILED;
+                                        result = EXECUTOR_ERROR_OUTPUT_FAILED;
                                         goto done;
                                 }
                                 for (field_index = 0;
@@ -1438,22 +1448,35 @@ static enum EXECUTOR_RESULT _find_objects(
                                                 fields[field_index].value,
                                                 fields[field_index]
                                                     .value_length,
-                                                &value) ||
-                                            printf(" %s=",
-                                                   schema[field_index].name) <
-                                                0 ||
-                                            !_print_value(&file, &value)) {
+                                                &value)) {
                                                 _free_object_fields(
                                                     fields, schema_count);
                                                 result =
                                                     EXECUTOR_ERROR_STORAGE_FAILED;
                                                 goto done;
                                         }
+                                        if (fprintf(output, " %s=",
+                                                    schema[field_index].name) <
+                                            0) {
+                                                _free_object_fields(
+                                                    fields, schema_count);
+                                                result =
+                                                    EXECUTOR_ERROR_OUTPUT_FAILED;
+                                                goto done;
+                                        }
+                                        print_result =
+                                            _print_value(output, &file, &value);
+                                        if (print_result != EXECUTOR_OK) {
+                                                _free_object_fields(
+                                                    fields, schema_count);
+                                                result = print_result;
+                                                goto done;
+                                        }
                                 }
-                                if (putchar('\n') == EOF) {
+                                if (fputc('\n', output) == EOF) {
                                         _free_object_fields(fields,
                                                             schema_count);
-                                        result = EXECUTOR_ERROR_STORAGE_FAILED;
+                                        result = EXECUTOR_ERROR_OUTPUT_FAILED;
                                         goto done;
                                 }
                         }
@@ -1484,6 +1507,7 @@ static enum EXECUTOR_RESULT _find_objects(
                 struct executor_format_object_field* fields = NULL;
                 uint8_t* object_segment                     = NULL;
                 struct executor_value condition;
+                enum EXECUTOR_RESULT print_result;
                 size_t i;
                 bool matches = true;
 
@@ -1508,28 +1532,41 @@ static enum EXECUTOR_RESULT _find_objects(
                         matches = condition.value.boolean;
                 }
                 if (matches) {
-                        if (printf("%s.%llu", statement->name,
-                                   (unsigned long long)header.object_id) < 0) {
+                        if (fprintf(output, "%s.%llu", statement->name,
+                                    (unsigned long long)header.object_id) < 0) {
                                 _free_object_fields(fields, schema_count);
-                                result = EXECUTOR_ERROR_STORAGE_FAILED;
+                                result = EXECUTOR_ERROR_OUTPUT_FAILED;
                                 goto done;
                         }
                         for (i = 0; i < schema_count; i++) {
                                 struct executor_value value;
                                 if (!_value_from_bytes(
                                         fields[i].type_code, fields[i].value,
-                                        fields[i].value_length, &value) ||
-                                    printf(" %s=", schema[i].name) < 0 ||
-                                    !_print_value(&file, &value)) {
+                                        fields[i].value_length, &value)) {
                                         _free_object_fields(fields,
                                                             schema_count);
                                         result = EXECUTOR_ERROR_STORAGE_FAILED;
                                         goto done;
                                 }
+                                if (fprintf(output, " %s=", schema[i].name) <
+                                    0) {
+                                        _free_object_fields(fields,
+                                                            schema_count);
+                                        result = EXECUTOR_ERROR_OUTPUT_FAILED;
+                                        goto done;
+                                }
+                                print_result =
+                                    _print_value(output, &file, &value);
+                                if (print_result != EXECUTOR_OK) {
+                                        _free_object_fields(fields,
+                                                            schema_count);
+                                        result = print_result;
+                                        goto done;
+                                }
                         }
-                        if (putchar('\n') == EOF) {
+                        if (fputc('\n', output) == EOF) {
                                 _free_object_fields(fields, schema_count);
-                                result = EXECUTOR_ERROR_STORAGE_FAILED;
+                                result = EXECUTOR_ERROR_OUTPUT_FAILED;
                                 goto done;
                         }
                 }
@@ -1545,12 +1582,13 @@ done:
 }
 
 enum EXECUTOR_RESULT executor_objects_execute(
-    struct database* db, const struct analyzer_statement* statement) {
+    struct database* db, const struct analyzer_statement* statement,
+    FILE* output) {
         switch (statement->kind) {
                 case ANALYZER_NEW:
-                        return _new_object(db, statement);
+                        return _new_object(db, statement, output);
                 case ANALYZER_FIND:
-                        return _find_objects(db, statement);
+                        return _find_objects(db, statement, output);
                 case ANALYZER_SET:
                         return _set_object(db, statement);
                 case ANALYZER_DELETE:
