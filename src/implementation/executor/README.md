@@ -25,12 +25,16 @@ metadata locator after each successful mutation.
   `CREATE INTERFACE`, and `DROP INTERFACE`.
 - Functions: `CREATE FUNCTION`, `DROP FUNCTION`, and `CALL`.
 - Objects: `NEW`, `FIND` with or without `WHERE`, `SET`, and `DELETE`.
-- Metadata: `LIST CLASSES`, `LIST INTERFACES`, and `DESCRIBE`.
+- Metadata: `LIST CLASSES`, `LIST INTERFACES`, `LIST FUNCTIONS`,
+  `DESCRIBE <class>`, `DESCRIBE FUNCTION <class>.<name>`, and
+  `DESCRIBE INTERFACE <name>`.
 
 Function expressions and `FIND WHERE` expressions use the documented
 precedence and operators. Function definitions are checked against the
 declaring class's fields, parameters, and return type when created, then
 evaluated against the selected object's values when called.
+Boolean function parameters and returns use the `bool` type and `CALL` prints
+their results as `true` or `false`.
 
 ## Referential and schema constraints
 
@@ -48,9 +52,11 @@ Field IDs and class, interface, and function IDs are kept stable across
 renames.
 
 The README does not prescribe command output formatting. Listings print one
-name per line; `FIND` prints each matching object and its values, `CALL` prints
-the returned value, and `DESCRIBE` prints the class, inherited fields, and
-implemented interfaces.
+entry per line, with functions qualified by their owner class. `FIND` prints
+each matching object and its values, `CALL` prints the returned value, and
+`DESCRIBE` prints either the class and its metadata or the function signature
+and stored expression; `DESCRIBE INTERFACE` prints the interface and its
+declared fields.
 
 `i_execute()` writes command output to standard output for the command-line
 client. `i_execute_to()` accepts a caller-owned `FILE*` output stream for

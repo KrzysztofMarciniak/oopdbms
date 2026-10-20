@@ -121,6 +121,47 @@ static enum EXECUTOR_RESULT _describe_class(
         return EXECUTOR_OK;
 }
 
+static enum EXECUTOR_RESULT _describe_interface(
+    struct database* db, const struct analyzer_statement* statement,
+    FILE* output) {
+        struct executor_format_file file;
+        struct executor_format_interface_entry entry;
+        struct executor_interface_view view;
+        size_t index;
+
+        if (statement->name == NULL || !db->format_mode ||
+            !executor_format_file_load(db, &file) ||
+            !_find_interface(&file, statement->name, &entry)) {
+                return EXECUTOR_ERROR_BAD_STATEMENT;
+        }
+        if (!_load_interface_view(&file, &entry, &view)) {
+                return EXECUTOR_ERROR_STORAGE_FAILED;
+        }
+        if (fprintf(output, "%s\n", statement->name) < 0) {
+                _interface_view_free(&view);
+                return EXECUTOR_ERROR_OUTPUT_FAILED;
+        }
+        for (index = 0; index < view.field_count; index++) {
+                const struct executor_format_field* field = &view.fields[index];
+                char type[UINT16_MAX + 16];
+
+                if (!_type_name(&file, field, type, sizeof type)) {
+                        _interface_view_free(&view);
+                        return EXECUTOR_ERROR_STORAGE_FAILED;
+                }
+                if (fputs("  ", output) < 0 ||
+                    fwrite(field->name, 1, field->name_length, output) !=
+                        field->name_length ||
+                    fputc(' ', output) == EOF || fputs(type, output) < 0 ||
+                    fputc('\n', output) == EOF) {
+                        _interface_view_free(&view);
+                        return EXECUTOR_ERROR_OUTPUT_FAILED;
+                }
+        }
+        _interface_view_free(&view);
+        return EXECUTOR_OK;
+}
+
 static enum EXECUTOR_RESULT _list_entries(struct database* db, bool classes,
                                           FILE* output) {
         struct executor_format_file file;
@@ -185,6 +226,132 @@ static enum EXECUTOR_RESULT _list_entries(struct database* db, bool classes,
         return EXECUTOR_OK;
 }
 
+static bool _function_type_name(struct executor_format_file* file,
+                                uint8_t type_code, uint32_t target_class_id,
+                                char* buffer, size_t capacity) {
+        struct executor_format_field field = {
+            .type_code       = type_code,
+            .target_class_id = target_class_id,
+        };
+
+        return _type_name(file, &field, buffer, capacity);
+}
+
+static enum EXECUTOR_RESULT _list_functions(struct database* db, FILE* output) {
+        struct executor_format_file file;
+        size_t index;
+
+        if (!db->format_mode || !executor_format_file_load(db, &file)) {
+                return EXECUTOR_ERROR_STORAGE_FAILED;
+        }
+        for (index = 0; index < file.header.function_count; index++) {
+                struct executor_format_function_entry entry;
+                struct executor_function_view view;
+                char* owner_name = NULL;
+                bool loaded;
+
+                if (!executor_format_file_read_function_entry(&file, index,
+                                                              &entry)) {
+                        return EXECUTOR_ERROR_STORAGE_FAILED;
+                }
+                loaded = _load_function_view(&file, &entry, &view);
+                if (!loaded || !_class_name_by_id(&file, entry.owner_class_id,
+                                                  &owner_name)) {
+                        if (loaded) {
+                                _function_view_free(&view);
+                        }
+                        free(owner_name);
+                        return EXECUTOR_ERROR_STORAGE_FAILED;
+                }
+                if (fprintf(output, "%s.", owner_name) < 0 ||
+                    fwrite(view.name, 1, view.name_length, output) !=
+                        view.name_length ||
+                    fputc('\n', output) == EOF) {
+                        free(owner_name);
+                        _function_view_free(&view);
+                        return EXECUTOR_ERROR_OUTPUT_FAILED;
+                }
+                free(owner_name);
+                _function_view_free(&view);
+        }
+        return EXECUTOR_OK;
+}
+
+static enum EXECUTOR_RESULT _describe_function(
+    struct database* db, const struct analyzer_statement* statement,
+    FILE* output) {
+        struct executor_format_file file;
+        struct executor_format_class_entry owner;
+        struct executor_format_function_entry entry;
+        struct executor_function_view view;
+        enum EXECUTOR_RESULT result = EXECUTOR_ERROR_BAD_STATEMENT;
+        size_t index;
+
+        memset(&view, 0, sizeof view);
+        if (statement->name == NULL || statement->function == NULL ||
+            !db->format_mode || !executor_format_file_load(db, &file) ||
+            !_find_class(&file, statement->name, &owner) ||
+            !_find_function(&file, owner.class_id, statement->function, NULL,
+                            &entry)) {
+                return EXECUTOR_ERROR_BAD_STATEMENT;
+        }
+        if (!_load_function_view(&file, &entry, &view)) {
+                return EXECUTOR_ERROR_STORAGE_FAILED;
+        }
+        result = EXECUTOR_ERROR_OUTPUT_FAILED;
+        if (fprintf(output, "%s.", statement->name) < 0 ||
+            fwrite(view.name, 1, view.name_length, output) !=
+                view.name_length ||
+            fputs(" (", output) < 0) {
+                goto done;
+        }
+        for (index = 0; index < view.parameter_count; index++) {
+                const struct executor_parameter_view* parameter =
+                    &view.parameters[index];
+                char type[UINT16_MAX + 16];
+
+                if ((index != 0 && fputs(", ", output) < 0) ||
+                    fwrite(parameter->name, 1, parameter->name_length,
+                           output) != parameter->name_length ||
+                    fputc(' ', output) == EOF) {
+                        goto done;
+                }
+                if (!_function_type_name(&file, parameter->type_code,
+                                         parameter->target_class_id, type,
+                                         sizeof type)) {
+                        result = EXECUTOR_ERROR_STORAGE_FAILED;
+                        goto done;
+                }
+                if (fputs(type, output) < 0) {
+                        goto done;
+                }
+        }
+        {
+                char return_type[UINT16_MAX + 16];
+
+                if (fputs(") RETURNS ", output) < 0) {
+                        goto done;
+                }
+                if (!_function_type_name(&file, view.return_type_code,
+                                         view.return_target_class_id,
+                                         return_type, sizeof return_type)) {
+                        result = EXECUTOR_ERROR_STORAGE_FAILED;
+                        goto done;
+                }
+                if (fputs(return_type, output) < 0 ||
+                    fputs(" AS ", output) < 0 ||
+                    fwrite(view.expression, 1, view.expression_length,
+                           output) != view.expression_length ||
+                    fputc('\n', output) == EOF) {
+                        goto done;
+                }
+        }
+        result = EXECUTOR_OK;
+done:
+        _function_view_free(&view);
+        return result;
+}
+
 enum EXECUTOR_RESULT executor_metadata_execute(
     struct database* db, const struct analyzer_statement* statement,
     FILE* output) {
@@ -193,8 +360,14 @@ enum EXECUTOR_RESULT executor_metadata_execute(
                         return _list_entries(db, true, output);
                 case ANALYZER_LIST_INTERFACES:
                         return _list_entries(db, false, output);
+                case ANALYZER_LIST_FUNCTIONS:
+                        return _list_functions(db, output);
                 case ANALYZER_DESCRIBE:
                         return _describe_class(db, statement, output);
+                case ANALYZER_DESCRIBE_FUNCTION:
+                        return _describe_function(db, statement, output);
+                case ANALYZER_DESCRIBE_INTERFACE:
+                        return _describe_interface(db, statement, output);
                 default:
                         return EXECUTOR_ERROR_NOT_IMPLEMENTED;
         }

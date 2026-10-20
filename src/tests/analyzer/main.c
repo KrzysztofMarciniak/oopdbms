@@ -317,8 +317,18 @@ static void _test_meta(void) {
         i_analyzer_free(&st);
         st = _ok("LIST INTERFACES", ANALYZER_LIST_INTERFACES);
         i_analyzer_free(&st);
+        st = _ok("LIST FUNCTIONS", ANALYZER_LIST_FUNCTIONS);
+        i_analyzer_free(&st);
         st = _ok("DESCRIBE Employee", ANALYZER_DESCRIBE);
         CHECK(_same(st.name, "Employee"), "describe");
+        i_analyzer_free(&st);
+        st = _ok("DESCRIBE FUNCTION Employee.raised",
+                 ANALYZER_DESCRIBE_FUNCTION);
+        CHECK(_same(st.name, "Employee") && _same(st.function, "raised"),
+              "describe function");
+        i_analyzer_free(&st);
+        st = _ok("DESCRIBE INTERFACE Named", ANALYZER_DESCRIBE_INTERFACE);
+        CHECK(_same(st.name, "Named"), "describe interface");
         i_analyzer_free(&st);
 }
 

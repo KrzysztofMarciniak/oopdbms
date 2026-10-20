@@ -38,7 +38,10 @@ static bool _kind_matches_group(const struct analyzer_statement* statement) {
                 case ANALYZER_GROUP_METADATA:
                         return statement->kind == ANALYZER_LIST_CLASSES ||
                                statement->kind == ANALYZER_LIST_INTERFACES ||
-                               statement->kind == ANALYZER_DESCRIBE;
+                               statement->kind == ANALYZER_LIST_FUNCTIONS ||
+                               statement->kind == ANALYZER_DESCRIBE ||
+                               statement->kind == ANALYZER_DESCRIBE_FUNCTION ||
+                               statement->kind == ANALYZER_DESCRIBE_INTERFACE;
                 default:
                         return false;
         }

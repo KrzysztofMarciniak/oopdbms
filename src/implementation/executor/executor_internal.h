@@ -100,6 +100,7 @@ struct executor_parameter_view {
 
 struct executor_function_view {
         uint8_t* bytes;
+        const uint8_t* name;
         uint16_t name_length;
         uint16_t parameter_count;
         uint8_t return_type_code;
@@ -159,6 +160,10 @@ bool _field_types_equal(const struct executor_format_field* left,
 bool _find_function(struct executor_format_file* file, uint32_t owner_class_id,
                     const char* function_name, size_t* found_index,
                     struct executor_format_function_entry* found);
+bool _load_function_view(struct executor_format_file* file,
+                         const struct executor_format_function_entry* entry,
+                         struct executor_function_view* view);
+void _function_view_free(struct executor_function_view* view);
 bool _class_field_exists(struct executor_format_file* file, uint32_t class_id,
                          const char* name, struct executor_format_field* found);
 bool _evaluate_ast(const struct analyzer_expression* expression,

@@ -772,7 +772,10 @@ static bool _parse_statement(struct parser* p, struct analyzer_statement* st) {
                 case TOKENIZER_DELETE:
                 case TOKENIZER_LIST_CLASSES:
                 case TOKENIZER_LIST_INTERFACES:
+                case TOKENIZER_LIST_FUNCTIONS:
                 case TOKENIZER_DESCRIBE:
+                case TOKENIZER_DESCRIBE_FUNCTION:
+                case TOKENIZER_DESCRIBE_INTERFACE:
                         _advance(p);
                         break;
                 default:
@@ -827,9 +830,22 @@ static bool _parse_statement(struct parser* p, struct analyzer_statement* st) {
                 case TOKENIZER_LIST_INTERFACES:
                         st->kind = ANALYZER_LIST_INTERFACES;
                         return true;
-                default:
+                case TOKENIZER_LIST_FUNCTIONS:
+                        st->kind = ANALYZER_LIST_FUNCTIONS;
+                        return true;
+                case TOKENIZER_DESCRIBE_FUNCTION:
+                        st->kind = ANALYZER_DESCRIBE_FUNCTION;
+                        return _take_name(p, &st->name) &&
+                               _expect(p, TOKENIZER_DOT) &&
+                               _take_name(p, &st->function);
+                case TOKENIZER_DESCRIBE_INTERFACE:
+                        st->kind = ANALYZER_DESCRIBE_INTERFACE;
+                        return _take_name(p, &st->name);
+                case TOKENIZER_DESCRIBE:
                         st->kind = ANALYZER_DESCRIBE;
                         return _take_name(p, &st->name);
+                default:
+                        return false;
         }
 }
 
@@ -858,7 +874,10 @@ static enum ANALYZER_GROUP _group_of(enum ANALYZER_STATEMENT kind) {
                         return ANALYZER_GROUP_OBJECT;
                 case ANALYZER_LIST_CLASSES:
                 case ANALYZER_LIST_INTERFACES:
+                case ANALYZER_LIST_FUNCTIONS:
                 case ANALYZER_DESCRIBE:
+                case ANALYZER_DESCRIBE_FUNCTION:
+                case ANALYZER_DESCRIBE_INTERFACE:
                         return ANALYZER_GROUP_METADATA;
                 default:
                         return ANALYZER_GROUP_NONE;

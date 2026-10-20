@@ -23,8 +23,10 @@
 
 bool i_file_check_statement_is_read_only(enum ANALYZER_STATEMENT kind) {
         return kind == ANALYZER_FIND || kind == ANALYZER_LIST_CLASSES ||
-               kind == ANALYZER_LIST_INTERFACES || kind == ANALYZER_DESCRIBE ||
-               kind == ANALYZER_CALL;
+               kind == ANALYZER_LIST_INTERFACES ||
+               kind == ANALYZER_LIST_FUNCTIONS || kind == ANALYZER_DESCRIBE ||
+               kind == ANALYZER_DESCRIBE_FUNCTION ||
+               kind == ANALYZER_DESCRIBE_INTERFACE || kind == ANALYZER_CALL;
 }
 
 /** Fill in an error. */

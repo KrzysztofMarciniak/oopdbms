@@ -133,6 +133,11 @@ static void _test_functions(void) {
                     TOKENIZER_RPAREN, TOKENIZER_ON, TOKENIZER_LITERAL_INTEGER);
         EXPECT_LINE("DROP FUNCTION Employee.raised", TOKENIZER_DROP_FUNCTION,
                     TOKENIZER_IDENTIFIER, TOKENIZER_DOT, TOKENIZER_IDENTIFIER);
+        EXPECT_LINE("DESCRIBE FUNCTION Employee.raised",
+                    TOKENIZER_DESCRIBE_FUNCTION, TOKENIZER_IDENTIFIER,
+                    TOKENIZER_DOT, TOKENIZER_IDENTIFIER);
+        EXPECT_LINE("DESCRIBE INTERFACE Named", TOKENIZER_DESCRIBE_INTERFACE,
+                    TOKENIZER_IDENTIFIER);
 }
 
 static void _test_objects(void) {
@@ -167,8 +172,12 @@ static void _test_objects(void) {
 static void _test_meta(void) {
         EXPECT_LINE("LIST CLASSES", TOKENIZER_LIST_CLASSES);
         EXPECT_LINE("LIST INTERFACES", TOKENIZER_LIST_INTERFACES);
+        EXPECT_LINE("LIST FUNCTIONS", TOKENIZER_LIST_FUNCTIONS);
         EXPECT_LINE("DESCRIBE Employee", TOKENIZER_DESCRIBE,
                     TOKENIZER_IDENTIFIER);
+        EXPECT_LINE("DESCRIBE FUNCTION Employee.raised",
+                    TOKENIZER_DESCRIBE_FUNCTION, TOKENIZER_IDENTIFIER,
+                    TOKENIZER_DOT, TOKENIZER_IDENTIFIER);
 }
 
 static void _test_splitting(void) {

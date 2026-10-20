@@ -56,8 +56,14 @@ enum ANALYZER_STATEMENT {
         ANALYZER_LIST_CLASSES,
         /** LIST INTERFACES: nothing */
         ANALYZER_LIST_INTERFACES,
+        /** LIST FUNCTIONS: nothing */
+        ANALYZER_LIST_FUNCTIONS,
         /** DESCRIBE: name (class) */
-        ANALYZER_DESCRIBE
+        ANALYZER_DESCRIBE,
+        /** DESCRIBE FUNCTION: name (class), function */
+        ANALYZER_DESCRIBE_FUNCTION,
+        /** DESCRIBE INTERFACE: name (interface) */
+        ANALYZER_DESCRIBE_INTERFACE
 };
 
 /**
@@ -72,7 +78,7 @@ enum ANALYZER_GROUP {
         ANALYZER_GROUP_FUNCTION,
         /** NEW, FIND, SET, DELETE */
         ANALYZER_GROUP_OBJECT,
-        /** LIST CLASSES, LIST INTERFACES, DESCRIBE */
+        /** LIST CLASSES, LIST INTERFACES, LIST FUNCTIONS, DESCRIBE */
         ANALYZER_GROUP_METADATA
 };
 

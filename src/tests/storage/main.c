@@ -99,9 +99,12 @@ static void _test_missing(void) {
                                              ANALYZER_DROP_CLASS,
                                              ANALYZER_ALTER_CLASS_ADD_FIELD};
 
-        enum ANALYZER_STATEMENT reading[] = {
-            ANALYZER_FIND, ANALYZER_LIST_CLASSES, ANALYZER_LIST_INTERFACES,
-            ANALYZER_DESCRIBE, ANALYZER_CALL};
+        enum ANALYZER_STATEMENT reading[] = {ANALYZER_FIND,
+                                             ANALYZER_LIST_CLASSES,
+                                             ANALYZER_LIST_INTERFACES,
+                                             ANALYZER_DESCRIBE,
+                                             ANALYZER_DESCRIBE_INTERFACE,
+                                             ANALYZER_CALL};
 
         size_t i;
 

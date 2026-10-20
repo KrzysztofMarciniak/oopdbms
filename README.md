@@ -46,7 +46,11 @@ DROP INTERFACE <name>
 CREATE FUNCTION <class>.<name> (<arg> <type>[, ...]) RETURNS <type> AS <expression>
 DROP FUNCTION <class>.<name>
 CALL <class>.<name> (<value>[, ...]) ON <id>
+DESCRIBE FUNCTION <class>.<name>
 ```
+
+Functions belong to a class and may return `bool`; `CALL` prints boolean
+results as `true` or `false`.
 
 ### Objects
 
@@ -62,7 +66,10 @@ DELETE <class> <id>
 ```text
 LIST CLASSES
 LIST INTERFACES
+LIST FUNCTIONS
 DESCRIBE <class>
+DESCRIBE FUNCTION <class>.<name>
+DESCRIBE INTERFACE <name>
 ```
 
 ### Types
@@ -102,6 +109,9 @@ DROP INTERFACE Named
 ```text
 CREATE FUNCTION Employee.raised (percent float) RETURNS float AS salary * (1 + percent / 100)
 CALL Employee.raised (10) ON 7
+CREATE FUNCTION Employee.is_adult (minimum integer) RETURNS bool AS age >= minimum
+CALL Employee.is_adult (18) ON 7
+DESCRIBE FUNCTION Employee.is_adult
 DROP FUNCTION Employee.raised
 ```
 
@@ -124,7 +134,10 @@ DELETE Book 1
 ```text
 LIST CLASSES
 LIST INTERFACES
+LIST FUNCTIONS
 DESCRIBE Employee
+DESCRIBE FUNCTION Employee.is_adult
+DESCRIBE INTERFACE Named
 ```
 
 ## Building
@@ -203,6 +216,7 @@ The tokenizer recognizes these two-word tokens even when the words are separate 
 CREATE CLASS       DROP CLASS        ALTER CLASS
 CREATE INTERFACE   DROP INTERFACE    CREATE FUNCTION
 DROP FUNCTION      LIST CLASSES      LIST INTERFACES
+LIST FUNCTIONS     DESCRIBE FUNCTION DESCRIBE INTERFACE
 ADD FIELD          DROP FIELD        RENAME FIELD
 ```
 

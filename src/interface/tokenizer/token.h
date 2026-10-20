@@ -53,8 +53,14 @@ enum TOKENIZER_TOKEN {
         TOKENIZER_LIST_CLASSES,
         /** LIST INTERFACES */
         TOKENIZER_LIST_INTERFACES,
+        /** LIST FUNCTIONS */
+        TOKENIZER_LIST_FUNCTIONS,
         /** DESCRIBE <class> */
         TOKENIZER_DESCRIBE,
+        /** DESCRIBE FUNCTION <class>.<name> */
+        TOKENIZER_DESCRIBE_FUNCTION,
+        /** DESCRIBE INTERFACE <name> */
+        TOKENIZER_DESCRIBE_INTERFACE,
 
         /** ADD FIELD <field> <type> (after ALTER CLASS <n>) */
         TOKENIZER_ADD_FIELD,

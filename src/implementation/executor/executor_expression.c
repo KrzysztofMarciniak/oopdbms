@@ -839,10 +839,6 @@ static bool _parse_text_expression(struct executor_text_parser* parser,
             !_apply_text_operator(op, &left, &right, &combined)) {
                 return false;
         }
-        _text_skip_space(parser);
-        if (parser->position != parser->length) {
-                return false;
-        }
         *result = combined;
         return true;
 }

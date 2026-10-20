@@ -13,6 +13,8 @@ int test_executor_create_function(void);
 int test_executor_create_function_pointer(void);
 int test_executor_create_interface(void);
 int test_executor_format_helpers(void);
+int test_executor_function_metadata(void);
+int test_executor_describe_interface(void);
 int test_executor_list_classes(void);
 int test_executor_list_interfaces(void);
 int test_executor_main(void);
@@ -48,6 +50,10 @@ static const struct test_suite suites[] = {
      test_executor_create_function},
     {"function-pointer", "Executor", "Function pointers",
      test_executor_create_function_pointer},
+    {"function-metadata", "Executor", "Function metadata and booleans",
+     test_executor_function_metadata},
+    {"describe-interface", "Executor", "Describe interface",
+     test_executor_describe_interface},
     {"create-interface", "Executor", "Create interface",
      test_executor_create_interface},
     {"list-classes", "Executor", "List classes", test_executor_list_classes},

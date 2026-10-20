@@ -5,16 +5,15 @@
 
 #include "implementation/executor/executor_internal.h"
 
-static void _function_view_free(struct executor_function_view* view) {
+void _function_view_free(struct executor_function_view* view) {
         free(view->parameters);
         free(view->bytes);
         memset(view, 0, sizeof *view);
 }
 
-static bool _load_function_view(
-    struct executor_format_file* file,
-    const struct executor_format_function_entry* entry,
-    struct executor_function_view* view) {
+bool _load_function_view(struct executor_format_file* file,
+                         const struct executor_format_function_entry* entry,
+                         struct executor_function_view* view) {
         size_t type_size;
         size_t offset;
         size_t i;
@@ -53,6 +52,7 @@ static bool _load_function_view(
                 _function_view_free(view);
                 return false;
         }
+        view->name = view->bytes + offset;
         offset += view->name_length;
         view->parameters =
             calloc(view->parameter_count == 0 ? 1 : view->parameter_count,
