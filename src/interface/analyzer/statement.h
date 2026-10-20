@@ -298,6 +298,8 @@ struct analyzer_statement {
         struct analyzer_assignments assignments;
         /** Function body, or FIND condition (NULL without WHERE). */
         struct analyzer_expression* expression;
+        /** Function DSL or extended expression source, NULL for AST bodies. */
+        char* body;
 };
 
 #endif// INTERFACE_ANALYZER_STATEMENT_H

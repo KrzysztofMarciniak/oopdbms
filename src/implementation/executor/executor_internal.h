@@ -23,6 +23,11 @@
 #include "implementation/executor/helper/format_file.h"
 #include "interface/executor/executor.h"
 
+#define EXECUTOR_FUNCTION_STEP_BUDGET 10000u
+#define EXECUTOR_FUNCTION_CALL_DEPTH_LIMIT 32u
+#define EXECUTOR_FUNCTION_SCRIPT_DEPTH_LIMIT 128u
+#define EXECUTOR_FUNCTION_EXPRESSION_DEPTH_LIMIT 128u
+
 struct expression_text {
         char* bytes;
         size_t length;
@@ -74,21 +79,40 @@ struct executor_binding {
         struct executor_value value;
 };
 
+struct executor_text_pool {
+        uint8_t** items;
+        size_t count;
+        size_t capacity;
+};
+
 struct executor_eval_context {
+        struct executor_format_file* file;
+        uint32_t owner_class_id;
         const struct executor_format_field* schema;
         size_t schema_count;
         const struct executor_format_object_field* fields;
         const struct executor_binding* bindings;
         size_t binding_count;
+        struct executor_binding* locals;
+        size_t local_count;
+        size_t local_capacity;
+        size_t* execution_budget;
+        size_t call_depth;
+        size_t script_depth;
+        struct executor_text_pool* text_pool;
+        uint8_t return_type_code;
+        uint32_t return_target_class_id;
 };
 
 struct executor_text_parser {
         const uint8_t* bytes;
         size_t length;
         size_t position;
+        size_t depth;
         struct executor_eval_context* context;
         char** allocations;
         size_t allocation_count;
+        bool evaluate;
 };
 
 struct executor_parameter_view {

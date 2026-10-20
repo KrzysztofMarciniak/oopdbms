@@ -191,8 +191,10 @@ enum EXECUTOR_RESULT _call_function(struct database* db,
         uint8_t** argument_bytes                           = NULL;
         uint8_t* object_segment                            = NULL;
         struct executor_value returned;
+        struct executor_text_pool text_pool = {0};
         uint64_t object_id;
-        size_t schema_count = 0;
+        size_t execution_budget = EXECUTOR_FUNCTION_STEP_BUDGET;
+        size_t schema_count     = 0;
         size_t i;
         bool loaded_function        = false;
         enum EXECUTOR_RESULT result = EXECUTOR_ERROR_BAD_STATEMENT;
@@ -261,11 +263,17 @@ enum EXECUTOR_RESULT _call_function(struct database* db,
         }
         {
                 struct executor_eval_context context = {
-                    .schema        = schema,
-                    .schema_count  = schema_count,
-                    .fields        = object_fields,
-                    .bindings      = bindings,
-                    .binding_count = function.parameter_count,
+                    .file                   = &file,
+                    .owner_class_id         = owner.class_id,
+                    .schema                 = schema,
+                    .schema_count           = schema_count,
+                    .fields                 = object_fields,
+                    .bindings               = bindings,
+                    .binding_count          = function.parameter_count,
+                    .execution_budget       = &execution_budget,
+                    .text_pool              = &text_pool,
+                    .return_type_code       = function.return_type_code,
+                    .return_target_class_id = function.return_target_class_id,
                 };
                 enum EXECUTOR_RESULT print_result;
                 if (!_evaluate_text_expression(function.expression,
@@ -289,6 +297,10 @@ enum EXECUTOR_RESULT _call_function(struct database* db,
         }
         result = EXECUTOR_OK;
 done:
+        for (i = 0; i < text_pool.count; i++) {
+                free(text_pool.items[i]);
+        }
+        free(text_pool.items);
         if (argument_bytes != NULL) {
                 for (i = 0;
                      i < (loaded_function ? function.parameter_count : 0);

@@ -719,6 +719,105 @@ static bool _parse_alter_class(struct parser* p,
         }
 }
 
+static bool _body_append(char** body, size_t* length, size_t* capacity,
+                         const char* text, size_t text_length) {
+        size_t needed;
+        char* grown;
+
+        if (text_length > SIZE_MAX - *length - 2) {
+                return false;
+        }
+        needed = *length + text_length + 2;
+        if (needed > *capacity) {
+                size_t new_capacity = *capacity == 0 ? 64 : *capacity;
+                while (new_capacity < needed) {
+                        if (new_capacity > SIZE_MAX / 2) {
+                                new_capacity = needed;
+                                break;
+                        }
+                        new_capacity *= 2;
+                }
+                grown = realloc(*body, new_capacity);
+                if (grown == NULL) {
+                        return false;
+                }
+                *body     = grown;
+                *capacity = new_capacity;
+        }
+        if (*length != 0) {
+                (*body)[(*length)++] = ' ';
+        }
+        memcpy(*body + *length, text, text_length);
+        *length += text_length;
+        (*body)[*length] = '\0';
+        return true;
+}
+
+static bool _parse_function_body(struct parser* p, char** body) {
+        size_t length   = 0;
+        size_t capacity = 0;
+        size_t depth    = 0;
+
+        while (_peek(p)->type != TOKENIZER_END) {
+                const struct tokenizer_token* token = _advance(p);
+
+                if (token->type == TOKENIZER_LBRACE) {
+                        depth++;
+                } else if (token->type == TOKENIZER_RBRACE) {
+                        if (depth == 0) {
+                                free(*body);
+                                *body = NULL;
+                                return _unexpected(p, TOKENIZER_LBRACE);
+                        }
+                        depth--;
+                }
+                if (!_body_append(body, &length, &capacity, token->lexeme,
+                                  token->length)) {
+                        free(*body);
+                        *body = NULL;
+                        return _out_of_memory(p);
+                }
+                if (depth == 0) {
+                        return true;
+                }
+        }
+        free(*body);
+        *body = NULL;
+        return _unexpected(p, TOKENIZER_RBRACE);
+}
+
+static bool _parse_function_expression_body(struct parser* p, char** body) {
+        size_t length   = 0;
+        size_t capacity = 0;
+
+        while (_peek(p)->type != TOKENIZER_END) {
+                const struct tokenizer_token* token = _advance(p);
+                if (!_body_append(body, &length, &capacity, token->lexeme,
+                                  token->length)) {
+                        free(*body);
+                        *body = NULL;
+                        return _out_of_memory(p);
+                }
+        }
+        return length != 0 || _unexpected_kind(p, ANALYZER_EXPECT_EXPRESSION);
+}
+
+static bool _function_expression_uses_text_parser(const struct parser* p) {
+        size_t position;
+
+        for (position = p->position; p->tokens[position].type != TOKENIZER_END;
+             position++) {
+                enum TOKENIZER_TOKEN type = p->tokens[position].type;
+                if (type == TOKENIZER_AND || type == TOKENIZER_OR ||
+                    type == TOKENIZER_NOT ||
+                    (type == TOKENIZER_IDENTIFIER &&
+                     p->tokens[position + 1].type == TOKENIZER_LPAREN)) {
+                        return true;
+                }
+        }
+        return false;
+}
+
 /** CREATE FUNCTION <class>.<name> (...) RETURNS <type> AS <expression> */
 static bool _parse_create_function(struct parser* p,
                                    struct analyzer_statement* st) {
@@ -728,6 +827,12 @@ static bool _parse_create_function(struct parser* p,
             !_expect(p, TOKENIZER_RETURNS) ||
             !_parse_type(p, &st->return_type) || !_expect(p, TOKENIZER_AS)) {
                 return false;
+        }
+        if (_peek(p)->type == TOKENIZER_LBRACE) {
+                return _parse_function_body(p, &st->body);
+        }
+        if (_function_expression_uses_text_parser(p)) {
+                return _parse_function_expression_body(p, &st->body);
         }
         st->expression = _parse_comparison(p, false);
         return st->expression != NULL;
@@ -949,5 +1054,6 @@ void i_analyzer_free(struct analyzer_statement* statement) {
         }
         free(statement->assignments.items);
         _expression_free(statement->expression);
+        free(statement->body);
         *statement = empty;
 }

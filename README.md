@@ -44,13 +44,37 @@ DROP INTERFACE <name>
 
 ```text
 CREATE FUNCTION <class>.<name> (<arg> <type>[, ...]) RETURNS <type> AS <expression>
+CREATE FUNCTION <class>.<name> (<arg> <type>[, ...]) RETURNS <type> AS { <statements> }
 DROP FUNCTION <class>.<name>
 CALL <class>.<name> (<value>[, ...]) ON <id>
 DESCRIBE FUNCTION <class>.<name>
 ```
 
 Functions belong to a class and may return `bool`; `CALL` prints boolean
-results as `true` or `false`.
+results as `true` or `false`. A function body can remain one expression or use
+the in-process function DSL:
+
+```text
+local <name> = <expression>;
+<local> = <expression>;
+if (<bool expression>) { <statements> } else { <statements> }
+while (<bool expression>) { <statements> }
+for (local <name> = <expression>; <bool expression>; <local> = <expression>) { <statements> }
+return <expression>;
+```
+
+Locals infer their type at declaration and assignments must keep that type.
+Expressions support arithmetic, comparisons, `&&`, `||`, and `!`; logical
+operators short-circuit. These operators and function calls are available in
+both expression bodies and compound bodies. A function may call another
+function owned by the same class by name, for example `is_adult(minimum)`,
+using the same object.
+Assignments only change locals, never database fields. Loops and nested calls
+share a 10,000-operation budget for executed statements, loop iterations, and
+nested calls, with a 32-call depth limit; execution fails if a function reaches
+its end without returning a value. Function bodies are not system-shell
+scripts: shell commands, command substitution, and process execution are not
+available.
 
 ### Objects
 
@@ -111,6 +135,11 @@ CREATE FUNCTION Employee.raised (percent float) RETURNS float AS salary * (1 + p
 CALL Employee.raised (10) ON 7
 CREATE FUNCTION Employee.is_adult (minimum integer) RETURNS bool AS age >= minimum
 CALL Employee.is_adult (18) ON 7
+CREATE FUNCTION Employee.is_active_adult (minimum integer) RETURNS bool AS {
+  local eligible = active && is_adult(minimum);
+  if (eligible) { return true; } else { return false; }
+}
+CALL Employee.is_active_adult (18) ON 7
 DESCRIBE FUNCTION Employee.is_adult
 DROP FUNCTION Employee.raised
 ```
@@ -204,8 +233,8 @@ The tokenizer skips `argv[0]`, treats the remaining arguments like a small shell
 words        [A-Za-z_][A-Za-z0-9_]*
 numbers      42   9.99   (a sign is a separate - token)
 text         "Frank Herbert" or 'Dune'; supports \" and \\ escapes
-operators    =  !=  <  <=  >  >=  +  -  *  /
-punctuation  (  )  ,  .   (split even without spaces, e.g. Person.1)
+operators    =  !=  <  <=  >  >=  +  -  *  /  &&  ||  !
+punctuation  (  )  {  }  ,  .  ;  (split even without spaces, e.g. Person.1)
 ```
 
 Keywords are case-sensitive: commands are uppercase; types and `true`/`false` are lowercase.

@@ -134,6 +134,18 @@ enum TOKENIZER_TOKEN {
         TOKENIZER_COMMA,
         /** . */
         TOKENIZER_DOT,
+        /** && */
+        TOKENIZER_AND,
+        /** || */
+        TOKENIZER_OR,
+        /** ! */
+        TOKENIZER_NOT,
+        /** { */
+        TOKENIZER_LBRACE,
+        /** } */
+        TOKENIZER_RBRACE,
+        /** ; */
+        TOKENIZER_SEMICOLON,
 
         /** Number of enumerators, for tables indexed by token. */
         TOKENIZER_COUNT

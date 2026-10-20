@@ -247,6 +247,25 @@ static void _test_functions(void) {
         CHECK(_same(st.name, "Employee") && _same(st.function, "raised"),
               "drop function");
         i_analyzer_free(&st);
+
+        st = _ok(
+            "CREATE FUNCTION Employee.active (minimum integer) RETURNS bool "
+            "AS { local ok = ! false && true; return ok; }",
+            ANALYZER_CREATE_FUNCTION);
+        CHECK(st.expression == NULL && st.body != NULL &&
+                  strstr(st.body, "local ok") != NULL &&
+                  strstr(st.body, "return ok") != NULL,
+              "compound function body is retained for execution");
+        i_analyzer_free(&st);
+
+        st =
+            _ok("CREATE FUNCTION Employee.active (minimum integer) RETURNS "
+                "bool AS active && minimum > 0",
+                ANALYZER_CREATE_FUNCTION);
+        CHECK(st.expression == NULL && st.body != NULL &&
+                  strstr(st.body, "active && minimum > 0") != NULL,
+              "logical expression bodies use the extended evaluator");
+        i_analyzer_free(&st);
 }
 
 static void _test_objects(void) {

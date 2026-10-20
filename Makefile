@@ -30,8 +30,8 @@ HEADERS := $(shell find src -type f -name '*.h')
 OBJECTS := $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(SOURCES))
 DEPFILES := $(OBJECTS:.o=.d) $(TEST_OBJECTS:.o=.d)
 ENGINE_NAME := oopdbms-engine
-ENGINE_VERSION := 0.2.0
-ENGINE_SONAME := lib$(ENGINE_NAME).so.0
+ENGINE_VERSION := 0.3.0
+ENGINE_SONAME := lib$(ENGINE_NAME).so.1
 ENGINE_DIR := $(BUILD_DIR)/lib
 ENGINE_STATIC := $(ENGINE_DIR)/lib$(ENGINE_NAME).a
 ENGINE_SHARED_REAL := $(ENGINE_DIR)/lib$(ENGINE_NAME).so.$(ENGINE_VERSION)

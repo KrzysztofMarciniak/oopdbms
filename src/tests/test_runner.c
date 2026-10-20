@@ -14,6 +14,7 @@ int test_executor_create_function_pointer(void);
 int test_executor_create_interface(void);
 int test_executor_format_helpers(void);
 int test_executor_function_metadata(void);
+int test_executor_function_dsl(void);
 int test_executor_describe_interface(void);
 int test_executor_list_classes(void);
 int test_executor_list_interfaces(void);
@@ -52,6 +53,8 @@ static const struct test_suite suites[] = {
      test_executor_create_function_pointer},
     {"function-metadata", "Executor", "Function metadata and booleans",
      test_executor_function_metadata},
+    {"function-dsl", "Executor", "Compound function DSL",
+     test_executor_function_dsl},
     {"describe-interface", "Executor", "Describe interface",
      test_executor_describe_interface},
     {"create-interface", "Executor", "Create interface",

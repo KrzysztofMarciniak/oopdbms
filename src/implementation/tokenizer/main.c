@@ -147,10 +147,16 @@ static const char* const TOKEN_NAMES[TOKENIZER_COUNT] = {
     [TOKENIZER_MINUS]              = "'-'",
     [TOKENIZER_STAR]               = "'*'",
     [TOKENIZER_SLASH]              = "'/'",
+    [TOKENIZER_AND]                = "'&&'",
+    [TOKENIZER_OR]                 = "'||'",
+    [TOKENIZER_NOT]                = "'!'",
     [TOKENIZER_LPAREN]             = "'('",
     [TOKENIZER_RPAREN]             = "')'",
     [TOKENIZER_COMMA]              = "','",
     [TOKENIZER_DOT]                = "'.'",
+    [TOKENIZER_LBRACE]             = "'{'",
+    [TOKENIZER_RBRACE]             = "'}'",
+    [TOKENIZER_SEMICOLON]          = "';'",
 };
 
 /** Words that only mean something together with a second word. */
@@ -315,12 +321,18 @@ static size_t _scan_symbol(const char* text) {
                 case '-':
                 case '*':
                 case '/':
+                case '{':
+                case '}':
+                case ';':
                         return 1;
+                case '&':
+                case '|':
+                        return text[1] == text[0] ? 2 : 0;
                 case '<':
                 case '>':
                         return text[1] == '=' ? 2 : 1;
                 case '!':
-                        return text[1] == '=' ? 2 : 0;
+                        return text[1] == '=' ? 2 : 1;
                 default:
                         return 0;
         }
@@ -414,6 +426,19 @@ static enum TOKENIZER_TOKEN _classify_symbol(const struct piece* piece) {
                         return TOKENIZER_STAR;
                 case '/':
                         return TOKENIZER_SLASH;
+                case '{':
+                        return TOKENIZER_LBRACE;
+                case '}':
+                        return TOKENIZER_RBRACE;
+                case ';':
+                        return TOKENIZER_SEMICOLON;
+                case '&':
+                        return TOKENIZER_AND;
+                case '|':
+                        return TOKENIZER_OR;
+                case '!':
+                        return piece->length == 2 ? TOKENIZER_NOT_EQUAL
+                                                  : TOKENIZER_NOT;
                 case '<':
                         return piece->length == 2 ? TOKENIZER_LESS_EQUAL
                                                   : TOKENIZER_LESS;
@@ -421,7 +446,7 @@ static enum TOKENIZER_TOKEN _classify_symbol(const struct piece* piece) {
                         return piece->length == 2 ? TOKENIZER_GREATER_EQUAL
                                                   : TOKENIZER_GREATER;
                 default:
-                        return TOKENIZER_NOT_EQUAL;
+                        return TOKENIZER_ILLEGAL;
         }
 }
 

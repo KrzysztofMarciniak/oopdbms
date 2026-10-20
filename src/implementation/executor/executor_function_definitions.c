@@ -219,7 +219,8 @@ static enum EXECUTOR_RESULT _create_function(
             statement->name[0] == '\0' || statement->function[0] == '\0' ||
             strlen(statement->function) > UINT16_MAX ||
             statement->fields.count > UINT16_MAX ||
-            statement->fields.items == NULL || statement->expression == NULL ||
+            statement->fields.items == NULL ||
+            (statement->expression == NULL && statement->body == NULL) ||
             !db->format_mode || !executor_format_file_load(db, &file)) {
                 return EXECUTOR_ERROR_BAD_STATEMENT;
         }
@@ -261,8 +262,18 @@ static enum EXECUTOR_RESULT _create_function(
                 parameters[i].name        = (const uint8_t*)source->name;
                 parameters[i].name_length = (uint16_t)strlen(source->name);
         }
-        if (!_expression_to_text(statement->expression, &expression) ||
-            expression.length > UINT32_MAX) {
+        if (statement->body != NULL) {
+                expression.length = strlen(statement->body);
+                expression.bytes  = malloc(expression.length + 1);
+                if (expression.bytes == NULL) {
+                        goto done;
+                }
+                memcpy(expression.bytes, statement->body,
+                       expression.length + 1);
+        } else if (!_expression_to_text(statement->expression, &expression)) {
+                goto done;
+        }
+        if (expression.length > UINT32_MAX) {
                 goto done;
         }
         memset(&definition, 0, sizeof definition);
@@ -417,8 +428,10 @@ static bool _validate_function_expression(
         struct executor_binding* bindings           = NULL;
         uint8_t** values                            = NULL;
         struct executor_value result;
-        struct executor_eval_context context;
-        size_t schema_count = 0;
+        struct executor_text_pool text_pool  = {0};
+        struct executor_eval_context context = {0};
+        size_t schema_count                  = 0;
+        size_t execution_budget              = EXECUTOR_FUNCTION_STEP_BUDGET;
         size_t i;
         bool valid = false;
 
@@ -508,17 +521,34 @@ static bool _validate_function_expression(
                                 goto done;
                 }
         }
-        context.schema        = schema;
-        context.schema_count  = schema_count;
-        context.fields        = fields;
-        context.bindings      = bindings;
-        context.binding_count = parameter_count;
+        context.file                   = file;
+        context.owner_class_id         = owner_class_id;
+        context.schema                 = schema;
+        context.schema_count           = schema_count;
+        context.fields                 = fields;
+        context.bindings               = bindings;
+        context.binding_count          = parameter_count;
+        context.execution_budget       = &execution_budget;
+        context.text_pool              = &text_pool;
+        context.return_type_code       = return_type_code;
+        context.return_target_class_id = return_target_class_id;
         valid = _evaluate_text_expression(expression, expression_length,
                                           &context, &result) &&
                 result.type_code == return_type_code &&
                 (result.type_code != EXECUTOR_FORMAT_TYPE_POINTER ||
                  result.value.pointer.class_id == return_target_class_id);
 done:
+        if (context.locals != NULL) {
+                size_t local;
+                for (local = 0; local < context.local_count; local++) {
+                        free((void*)context.locals[local].name);
+                }
+                free(context.locals);
+        }
+        for (i = 0; i < text_pool.count; i++) {
+                free(text_pool.items[i]);
+        }
+        free(text_pool.items);
         if (values != NULL) {
                 for (i = 0; i < schema_count; i++) {
                         free(values[i]);
